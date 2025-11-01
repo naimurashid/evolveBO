@@ -154,7 +154,13 @@ bo_calibrate <- function(sim_fun,
         unit_x = list(chosen_unit),
         constraint_tbl = constraint_tbl
       )
-      fidelity <- select_fidelity(prob_feas, fidelity_levels)
+
+      # Get CV (coefficient of variation) from surrogate for objective
+      pred_obj <- predict_surrogates(surrogates, list(chosen_unit))[[objective]]
+      cv_estimate <- pred_obj$sd[[1]] / max(abs(pred_obj$mean[[1]]), 1e-6)
+
+      fidelity <- select_fidelity_staged(prob_feas, cv_estimate,
+                                         iter_counter, fidelity_levels)
 
       history <- record_evaluation(
         history = history,
@@ -397,6 +403,55 @@ estimate_candidate_feasibility <- function(surrogates, unit_x, constraint_tbl) {
   prob_feasibility(mean_vec, sd_vec, constraint_tbl)
 }
 
+#' Select fidelity using staged multi-fidelity strategy
+#'
+#' Implements the staged approach described in manuscript Section 2.4:
+#' - Iterations 1-30: uniform low fidelity for exploration
+#' - Iterations 31-100: adaptive selection based on feasibility and CV
+#' - Iterations 101+: high fidelity near optimum and boundaries
+#'
+#' @param prob_feasible probability of constraint satisfaction
+#' @param cv_estimate coefficient of variation from surrogate
+#' @param iter current iteration number
+#' @param fidelity_levels named vector of fidelity levels
+#' @keywords internal
+select_fidelity_staged <- function(prob_feasible, cv_estimate, iter, fidelity_levels) {
+  if (length(fidelity_levels) == 1L) {
+    return(names(fidelity_levels))
+  }
+
+  # Stage 1: Initial exploration (iterations 1-30) - uniform low fidelity
+  if (iter <= 30) {
+    return(names(fidelity_levels)[1])  # "low"
+  }
+
+  # Stage 3: Final refinement (iterations 101+) - high fidelity near optimum
+  if (iter > 100 && prob_feasible > 0.6 && "high" %in% names(fidelity_levels)) {
+    return("high")
+  }
+
+  # Stage 2: Focused search (iterations 31-100) - adaptive via MFKG heuristic
+  # Promote fidelity if:
+  # 1. High uncertainty (CV > 0.18), AND
+  # 2. Near feasibility boundary (0.2 < prob_feasible < 0.8)
+  if (cv_estimate > 0.18 && prob_feasible >= 0.2 && prob_feasible <= 0.8) {
+    if ("high" %in% names(fidelity_levels)) {
+      return("high")
+    } else if ("med" %in% names(fidelity_levels)) {
+      return("med")
+    }
+  }
+
+  # Otherwise use medium fidelity for promising regions
+  if (prob_feasible >= 0.4 && "med" %in% names(fidelity_levels)) {
+    return("med")
+  }
+
+  # Default to low fidelity
+  names(fidelity_levels)[1]
+}
+
+#' Legacy fidelity selection (simple threshold-based)
 #' @keywords internal
 select_fidelity <- function(prob_feasible, fidelity_levels) {
   if (length(fidelity_levels) == 1L) {

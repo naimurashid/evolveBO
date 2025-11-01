@@ -27,7 +27,11 @@ Imports:
     furrr,
     progressr,
     mvtnorm
-Suggests: testthat, knitr, rmarkdown
+Suggests:
+    testthat,
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
 URL: https://github.com/naimurashid/evolveBO
 BugReports: https://github.com/naimurashid/evolveBO/issues
 Encoding: UTF-8
