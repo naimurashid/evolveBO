@@ -6,6 +6,7 @@
 #' @param n_mc number of Monte Carlo samples.
 #'
 #' @return tibble with first-order Sobol indices per parameter.
+#' @importFrom rlang .data
 #' @export
 sa_sobol <- function(surrogates,
                      bounds,

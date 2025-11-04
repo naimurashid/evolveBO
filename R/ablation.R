@@ -11,6 +11,7 @@
 #'
 #' @return Object of class `evolveBO_multifidelity` containing `runs` (per-policy
 #'   records) and `summary` (policy-level averages).
+#' @importFrom rlang .data
 #' @export
 ablation_multifidelity <- function(sim_fun,
                                    bounds,
@@ -95,6 +96,6 @@ plot_multifidelity_tradeoff <- function(ablation) {
                                          xmax = .data$sim_calls_mean + .data$sim_calls_sd), height = 0) +
     ggplot2::geom_errorbar(ggplot2::aes(ymin = .data$objective_mean - .data$objective_sd,
                                         ymax = .data$objective_mean + .data$objective_sd), width = 0) +
-    ggplot2::labs(x = "Simulation calls (mean ± sd)", y = "Objective (mean ± sd)", colour = "Policy") +
+    ggplot2::labs(x = "Simulation calls (mean +/- sd)", y = "Objective (mean +/- sd)", colour = "Policy") +
     ggplot2::theme_minimal()
 }
