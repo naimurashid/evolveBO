@@ -25,6 +25,7 @@
 #'
 #' @return An object of class `evolveBO_benchmark` with components `results`
 #'   (tibble of run-level records) and `call`.
+#' @importFrom rlang .data
 #' @export
 benchmark_methods <- function(sim_fun,
                               bounds,
@@ -164,8 +165,8 @@ plot_benchmark_efficiency <- function(benchmark) {
     ggplot2::geom_errorbar(ggplot2::aes(ymin = .data$objective_mean - .data$objective_sd,
                                         ymax = .data$objective_mean + .data$objective_sd), width = 0) +
     ggplot2::labs(
-      x = "Simulation calls (mean ± sd)",
-      y = "Objective (mean ± sd)",
+      x = "Simulation calls (mean +/- sd)",
+      y = "Objective (mean +/- sd)",
       colour = "Strategy"
     ) +
     ggplot2::theme_minimal()

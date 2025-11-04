@@ -4,6 +4,7 @@
 #'
 #' @return list with `design` (parameter/value tibble) and
 #'   `operating_characteristics` (metric summaries).
+#' @importFrom rlang .data
 #' @export
 summarise_case_study <- function(fit) {
   stopifnot(inherits(fit, "evolveBO_fit"))
@@ -42,6 +43,7 @@ summarise_case_study <- function(fit) {
 #' @param fit object from [bo_calibrate()].
 #' @param sobol_samples Monte Carlo samples for Sobol indices.
 #' @param gradient_points number of gradient samples.
+#' @param eps finite difference step size for gradient computation (default 1e-3).
 #'
 #' @return list with Sobol, gradient, and covariance diagnostics.
 #' @export

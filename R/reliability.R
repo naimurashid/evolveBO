@@ -12,6 +12,7 @@
 #'
 #' @return An object of class `evolveBO_reliability` with components `summary`
 #'   (strategy-level feasibility rates) and `runs` (per-run records).
+#' @importFrom rlang .data
 #' @export
 estimate_constraint_reliability <- function(sim_fun,
                                             bounds,
