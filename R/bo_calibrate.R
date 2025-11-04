@@ -96,6 +96,7 @@ bo_calibrate <- function(sim_fun,
 
   eval_counter <- 0L
   iter_counter <- 0L
+  last_best_objective <- NA_real_
 
   for (theta in initial_design) {
     theta <- coerce_theta_types(theta, integer_params)
@@ -113,8 +114,13 @@ bo_calibrate <- function(sim_fun,
       iter = 0L,
       seed = rng_seed + eval_counter,
       progress = progress,
+      extra = list(prob_feas = NA_real_, cv_estimate = NA_real_, acq_score = NA_real_),
       ...
     )
+    current_best <- best_feasible_objective(history, objective)
+    if (!is.na(current_best)) {
+      last_best_objective <- current_best
+    }
   }
 
   while (eval_counter < budget) {
@@ -143,6 +149,11 @@ bo_calibrate <- function(sim_fun,
     selected_idx <- order_idx[seq_len(n_new)]
     selected_candidates <- unit_candidates[selected_idx]
 
+    if (progress && length(selected_idx) > 0) {
+      max_acq <- max(acquisition_scores[selected_idx])
+      message(sprintf("  ↳ max acquisition score: %.3f", max_acq))
+    }
+
     for (i in seq_len(n_new)) {
       eval_counter <- eval_counter + 1L
       chosen_unit <- selected_candidates[[i]]
@@ -158,6 +169,12 @@ bo_calibrate <- function(sim_fun,
       # Get CV (coefficient of variation) from surrogate for objective
       pred_obj <- predict_surrogates(surrogates, list(chosen_unit))[[objective]]
       cv_estimate <- pred_obj$sd[[1]] / max(abs(pred_obj$mean[[1]]), 1e-6)
+
+      if (progress) {
+        message(sprintf("    · prob_feas = %.3f, cv = %.3f", prob_feas, cv_estimate))
+      }
+
+      acq_value <- acquisition_scores[selected_idx][i]
 
       fidelity <- select_fidelity_staged(prob_feas, cv_estimate,
                                          iter_counter, fidelity_levels)
@@ -175,8 +192,19 @@ bo_calibrate <- function(sim_fun,
         iter = iter_counter,
         seed = rng_seed + eval_counter,
         progress = progress,
+        extra = list(prob_feas = prob_feas,
+                     cv_estimate = cv_estimate,
+                     acq_score = acq_value),
         ...
       )
+
+      current_best <- best_feasible_objective(history, objective)
+      if (progress && !is.na(current_best) && !is.na(last_best_objective)) {
+        message(sprintf("  ↳ best objective change: %.3f", current_best - last_best_objective))
+      }
+      if (!is.na(current_best)) {
+        last_best_objective <- current_best
+      }
     }
   }
 
@@ -219,7 +247,10 @@ initialise_history <- function() {
     metrics = list(),
     variance = list(),
     objective = numeric(),
-    feasible = logical()
+    feasible = logical(),
+    prob_feas = numeric(),
+    cv_estimate = numeric(),
+    acq_score = numeric()
   )
 }
 
@@ -236,6 +267,7 @@ record_evaluation <- function(history,
                               iter,
                               seed,
                               progress,
+                              extra = NULL,
                               ...) {
   unit_theta <- scale_to_unit(theta, bounds)
   theta_id <- theta_to_id(unit_theta)
@@ -263,6 +295,11 @@ record_evaluation <- function(history,
     message(msg)
   }
 
+  if (is.null(extra)) extra <- list()
+  prob_feas_val <- if (!is.null(extra$prob_feas)) as.numeric(extra$prob_feas) else NA_real_
+  cv_val <- if (!is.null(extra$cv_estimate)) as.numeric(extra$cv_estimate) else NA_real_
+  acq_val <- if (!is.null(extra$acq_score)) as.numeric(extra$acq_score) else NA_real_
+
   dplyr::bind_rows(
     history,
     tibble::tibble(
@@ -276,7 +313,10 @@ record_evaluation <- function(history,
       metrics = list(metrics),
       variance = list(variance),
       objective = objective_value,
-      feasible = feasible
+      feasible = feasible,
+      prob_feas = prob_feas_val,
+      cv_estimate = cv_val,
+      acq_score = acq_val
     )
   )
 }

@@ -28,7 +28,8 @@ sa_sobol <- function(surrogates,
   A_list <- unit_matrix_to_list(A)
   B_list <- unit_matrix_to_list(B)
 
-  surrogate_subset <- list(outcome = surrogates[[outcome]])
+  # Create subset with the actual outcome name, not the literal string "outcome"
+  surrogate_subset <- surrogates[outcome]  # Keep the original name
   pred_A <- predict_surrogates(surrogate_subset, A_list)[[outcome]]$mean
   pred_B <- predict_surrogates(surrogate_subset, B_list)[[outcome]]$mean
 
@@ -50,6 +51,9 @@ sa_sobol <- function(surrogates,
     C[, j] <- B[, j]
     C_list <- unit_matrix_to_list(C)
     pred_C <- predict_surrogates(surrogate_subset, C_list)[[outcome]]$mean
+    if (is.null(pred_C) || length(pred_C) == 0) {
+      return(NA_real_)
+    }
     estimate <- mean(pred_B * (pred_C - pred_A)) / var_y
     max(0, min(1, estimate))
   })
