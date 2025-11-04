@@ -71,6 +71,7 @@
 #'   supporting sensitivity diagnostics. Note: early stopping (v0.3.0) may
 #'   terminate before \code{budget} is exhausted if convergence is detected
 #'   (no improvement > 0.01\% for 20 iterations).
+#'
 #' @importFrom utils head tail
 #' @export
 bo_calibrate <- function(sim_fun,
@@ -237,7 +238,7 @@ bo_calibrate <- function(sim_fun,
 
     if (progress && length(selected_idx) > 0) {
       max_acq <- max(acquisition_scores[selected_idx])
-      message(sprintf("  ↳ max acquisition score: %.3f", max_acq))
+      message(sprintf("  -> max acquisition score: %.3f", max_acq))
     }
 
     for (i in seq_len(n_new)) {
@@ -292,13 +293,13 @@ bo_calibrate <- function(sim_fun,
         progress = progress,
         extra = list(prob_feas = prob_feas,
                      cv_estimate = cv_estimate,
-                     acq_score = acq_value),
+                     acq_score = acq_val),
         ...
       )
 
       current_best <- best_feasible_objective(history, objective)
       if (progress && !is.na(current_best) && !is.na(last_best_objective)) {
-        message(sprintf("  ↳ best objective change: %.3f", current_best - last_best_objective))
+        message(sprintf("  -> best objective change: %.3f", current_best - last_best_objective))
       }
       if (!is.na(current_best)) {
         last_best_objective <- current_best
@@ -692,16 +693,16 @@ select_fidelity_method <- function(method, ...) {
 #' \itemize{
 #'   \item \strong{Value score}: acquisition * uncertainty * boundary_factor
 #'     \itemize{
-#'       \item High near feasibility boundary (prob ≈ 0.5)
+#'       \item High near feasibility boundary (prob ~= 0.5)
 #'       \item High when objective uncertain (large CV)
 #'       \item High for promising candidates (large acquisition)
 #'     }
-#'   \item \strong{Cost normalization}: Divide by cost^α where α decays from 0.5 → 0.8
+#'   \item \strong{Cost normalization}: Divide by cost^alpha where alpha decays from 0.5 to 0.8
 #'     \itemize{
 #'       \item Early: less cost-sensitive (exploration)
 #'       \item Late: more cost-sensitive (exploitation)
 #'     }
-#'   \item \strong{Exploration decay}: Randomization probability from 50% → 10%
+#'   \item \strong{Exploration decay}: Randomization probability from 50% to 10%
 #' }
 #'
 #' @return name of selected fidelity level
@@ -728,12 +729,12 @@ select_fidelity_adaptive <- function(prob_feasible,
 
   # === Compute value score ===
 
-  # Uncertainty factor: higher CV → more value in reducing uncertainty
+  # Uncertainty factor: higher CV -> more value in reducing uncertainty
   # Normalize to [0,1] range, assuming CV > 0.3 is very high
   uncertainty_factor <- pmax(0, pmin(1, cv_estimate / 0.3))
 
   # Boundary factor: highest value near feasibility boundary
-  # P = 0.5 → factor = 1, P = 0 or 1 → factor = 0
+  # P = 0.5 -> factor = 1, P = 0 or 1 -> factor = 0
   boundary_factor <- 1 - abs(2 * prob_feasible - 1)
   boundary_factor <- boundary_factor^0.5  # soften the effect
 
@@ -787,7 +788,7 @@ select_fidelity_adaptive <- function(prob_feasible,
   # === Diagnostics (optional) ===
   if (getOption("evolveBO.debug_fidelity", FALSE)) {
     message(sprintf(
-      "  Fidelity selection: prob_feas=%.3f, CV=%.3f, acq=%.3f, value=%.3f, cost_exp=%.2f → %s",
+      "  Fidelity selection: prob_feas=%.3f, CV=%.3f, acq=%.3f, value=%.3f, cost_exp=%.2f -> %s",
       prob_feasible, cv_estimate, acq_value, value_score, cost_exponent, selected
     ))
     message(sprintf("    Value/cost: %s",

@@ -14,6 +14,8 @@
 #' @param prev_surrogates optional list of surrogates from previous iteration
 #'   for warm-starting hyperparameter optimization. If provided, uses previous
 #'   hyperparameters as initial values, reducing optimization time by 30-50%.
+#'
+#' @return A named list of fitted surrogate models (GP objects).
 #' @export
 fit_surrogates <- function(history,
                            objective,

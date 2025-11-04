@@ -36,7 +36,7 @@ upper limits for each design parameter.}
 \item{objective}{name of the operating characteristic to minimise (character).}
 
 \item{constraints}{named list mapping metric -> `c(direction, threshold)` with
-`direction` in `{"ge","le"}`.}
+`direction` in "ge" or "le".}
 
 \item{kernel_options}{character vector of covariance kernels to compare.}
 

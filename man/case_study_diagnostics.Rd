@@ -17,6 +17,8 @@ case_study_diagnostics(
 \item{sobol_samples}{Monte Carlo samples for Sobol indices.}
 
 \item{gradient_points}{number of gradient samples.}
+
+\item{eps}{finite difference step size for gradient computation (default 1e-3).}
 }
 \value{
 list with Sobol, gradient, and covariance diagnostics.

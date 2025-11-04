@@ -7,6 +7,6 @@
 predict_surrogates(surrogates, unit_x)
 }
 \description{
-Predict metrics from fitted surrogates
+Handles both DiceKriging::km and hetGP::hetGP model objects.
 }
 \keyword{internal}
