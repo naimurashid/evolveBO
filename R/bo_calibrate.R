@@ -31,14 +31,16 @@
 #' @param constraints named list mapping metric -> `c(direction, threshold)` with
 #'   `direction` in "ge" or "le".
 #' @param n_init number of initial design evaluations generated via Latin
-#'   hypercube sampling.
+#'   hypercube sampling. Default 90 (increased from 40 for better coverage).
 #' @param q batch size for each BO iteration (number of new evaluations per
 #'   acquisition round). When \code{q > 1}, batch diversity is automatically
 #'   applied via local penalization (v0.3.0) to ensure spatially diverse points.
 #' @param budget total number of simulator evaluations (initial + BO iterations).
+#'   Default 300 (increased from 150 for tight constraint spaces).
 #' @param seed base RNG seed for reproducibility.
 #' @param fidelity_levels named numeric vector giving the number of simulator
-#'   replications associated with each fidelity level (defaults to low/med/high).
+#'   replications associated with each fidelity level. Default: c(low=2000, med=4000,
+#'   high=10000), increased from (200, 1000, 10000) for reduced Monte Carlo variance.
 #' @param fidelity_method method for selecting fidelity level. Options:
 #'   \describe{
 #'     \item{\code{"adaptive"}}{(default) Cost-aware selection based on expected
@@ -86,11 +88,11 @@ bo_calibrate <- function(sim_fun,
                          bounds,
                          objective,
                          constraints,
-                         n_init = 40,
+                         n_init = 90,
                          q = 8,
-                         budget = 150,
+                         budget = 300,
                          seed = 2025,
-                         fidelity_levels = c(low = 200, med = 1000, high = 10000),
+                         fidelity_levels = c(low = 2000, med = 4000, high = 10000),
                          fidelity_method = c("adaptive", "staged", "threshold"),
                          fidelity_costs = NULL,
                          fidelity_cv_threshold = 0.05,
