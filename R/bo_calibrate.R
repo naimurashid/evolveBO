@@ -53,6 +53,14 @@
 #' @param fidelity_costs named numeric vector of relative costs per fidelity level.
 #'   If NULL (default), assumes cost proportional to replication count. Use to
 #'   specify non-linear cost relationships (e.g., parallelization effects).
+#' @param fidelity_cv_threshold coefficient of variation threshold for fidelity
+#'   promotion in staged method. Designs with CV > threshold are promoted to
+#'   higher fidelity. Default 0.05 (tightened from 0.18 for constraint robustness).
+#'   Lower values = more conservative, require more replications before accepting.
+#' @param fidelity_prob_range two-element vector giving feasibility probability
+#'   range [min, max] for adaptive fidelity promotion. Points within this range
+#'   are near constraint boundaries and benefit from higher fidelity. Default
+#'   c(0.2, 0.8) identifies uncertain feasibility regions.
 #' @param acquisition acquisition rule to use (currently only `"eci"` is
 #'   implemented).
 #' @param candidate_pool number of random candidate points assessed per
@@ -85,6 +93,8 @@ bo_calibrate <- function(sim_fun,
                          fidelity_levels = c(low = 200, med = 1000, high = 10000),
                          fidelity_method = c("adaptive", "staged", "threshold"),
                          fidelity_costs = NULL,
+                         fidelity_cv_threshold = 0.05,
+                         fidelity_prob_range = c(0.2, 0.8),
                          acquisition = c("eci"),
                          candidate_pool = 2000,
                          covtype = "matern5_2",
@@ -275,7 +285,9 @@ bo_calibrate <- function(sim_fun,
         fidelity_costs = fidelity_costs,
         iter = iter_counter,
         total_budget_used = total_budget_used,
-        total_budget = total_budget_sim
+        total_budget = total_budget_sim,
+        cv_threshold = fidelity_cv_threshold,
+        prob_range = fidelity_prob_range
       )
 
       history <- record_evaluation(
@@ -603,7 +615,8 @@ estimate_candidate_feasibility <- function(surrogates, unit_x, constraint_tbl) {
 #' @param iter current iteration number
 #' @param fidelity_levels named vector of fidelity levels
 #' @keywords internal
-select_fidelity_staged <- function(prob_feasible, cv_estimate, iter, fidelity_levels) {
+select_fidelity_staged <- function(prob_feasible, cv_estimate, iter, fidelity_levels,
+                                   cv_threshold = 0.05, prob_range = c(0.2, 0.8), ...) {
   if (length(fidelity_levels) == 1L) {
     return(names(fidelity_levels))
   }
@@ -620,9 +633,9 @@ select_fidelity_staged <- function(prob_feasible, cv_estimate, iter, fidelity_le
 
   # Stage 2: Focused search (iterations 31-100) - adaptive via MFKG heuristic
   # Promote fidelity if:
-  # 1. High uncertainty (CV > 0.18), AND
-  # 2. Near feasibility boundary (0.2 < prob_feasible < 0.8)
-  if (cv_estimate > 0.18 && prob_feasible >= 0.2 && prob_feasible <= 0.8) {
+  # 1. High uncertainty (CV > cv_threshold), AND
+  # 2. Near feasibility boundary (prob_range[1] < prob_feasible < prob_range[2])
+  if (cv_estimate > cv_threshold && prob_feasible >= prob_range[1] && prob_feasible <= prob_range[2]) {
     if ("high" %in% names(fidelity_levels)) {
       return("high")
     } else if ("med" %in% names(fidelity_levels)) {
@@ -641,7 +654,7 @@ select_fidelity_staged <- function(prob_feasible, cv_estimate, iter, fidelity_le
 
 #' Legacy fidelity selection (simple threshold-based)
 #' @keywords internal
-select_fidelity <- function(prob_feasible, fidelity_levels) {
+select_fidelity <- function(prob_feasible, fidelity_levels, ...) {
   if (length(fidelity_levels) == 1L) {
     return(names(fidelity_levels))
   }
@@ -719,7 +732,10 @@ select_fidelity_adaptive <- function(prob_feasible,
                                      fidelity_costs,
                                      iter,
                                      total_budget_used,
-                                     total_budget) {
+                                     total_budget,
+                                     cv_threshold = 0.05,
+                                     prob_range = c(0.2, 0.8),
+                                     ...) {
   if (length(fidelity_levels) == 1L) {
     return(names(fidelity_levels))
   }
