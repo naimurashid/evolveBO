@@ -162,6 +162,18 @@ fit_dicekriging_surrogate <- function(history, metric, id_groups, param_names,
   # Extract hyperparameters from previous model for warm-starting
   parinit <- extract_gp_hyperparams(prev_model)
 
+  # Debug: Check what we're passing to DiceKriging::km
+  if (!is.matrix(X_unique)) {
+    warning(sprintf("X_unique is not a matrix! Class: %s, Dim: %s",
+                    class(X_unique)[1],
+                    paste(dim(X_unique), collapse = "x")))
+  }
+  if (!is.numeric(aggr$value)) {
+    warning(sprintf("aggr$value is not numeric! Class: %s, Length: %d",
+                    class(aggr$value)[1],
+                    length(aggr$value)))
+  }
+
   tryCatch({
     if (is.null(noise_vec)) {
       DiceKriging::km(
