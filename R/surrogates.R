@@ -145,7 +145,8 @@ fit_dicekriging_surrogate <- function(history, metric, id_groups, param_names,
       }
       vec
     }) |>
-    do.call(what = rbind)
+    do.call(what = rbind) |>
+    as.matrix()
   colnames(X_unique) <- param_names
 
   noise_vec <- aggr$noise
