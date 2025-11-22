@@ -13,7 +13,10 @@ select_fidelity_adaptive(
   fidelity_costs,
   iter,
   total_budget_used,
-  total_budget
+  total_budget,
+  cv_threshold = 0.05,
+  prob_range = c(0.2, 0.8),
+  ...
 )
 }
 \arguments{

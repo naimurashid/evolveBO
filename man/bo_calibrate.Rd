@@ -9,13 +9,15 @@ bo_calibrate(
   bounds,
   objective,
   constraints,
-  n_init = 40,
+  n_init = 90,
   q = 8,
-  budget = 150,
+  budget = 300,
   seed = 2025,
-  fidelity_levels = c(low = 200, med = 1000, high = 10000),
+  fidelity_levels = c(low = 2000, med = 4000, high = 10000),
   fidelity_method = c("adaptive", "staged", "threshold"),
   fidelity_costs = NULL,
+  fidelity_cv_threshold = 0.05,
+  fidelity_prob_range = c(0.2, 0.8),
   acquisition = c("eci"),
   candidate_pool = 2000,
   covtype = "matern5_2",
@@ -43,18 +45,20 @@ upper limits for each design parameter.}
 `direction` in "ge" or "le".}
 
 \item{n_init}{number of initial design evaluations generated via Latin
-hypercube sampling.}
+hypercube sampling. Default 90 (increased from 40 for better coverage).}
 
 \item{q}{batch size for each BO iteration (number of new evaluations per
 acquisition round). When \code{q > 1}, batch diversity is automatically
 applied via local penalization (v0.3.0) to ensure spatially diverse points.}
 
-\item{budget}{total number of simulator evaluations (initial + BO iterations).}
+\item{budget}{total number of simulator evaluations (initial + BO iterations).
+Default 300 (increased from 150 for tight constraint spaces).}
 
 \item{seed}{base RNG seed for reproducibility.}
 
 \item{fidelity_levels}{named numeric vector giving the number of simulator
-replications associated with each fidelity level (defaults to low/med/high).}
+replications associated with each fidelity level. Default: c(low=2000, med=4000,
+high=10000), increased from (200, 1000, 10000) for reduced Monte Carlo variance.}
 
 \item{fidelity_method}{method for selecting fidelity level. Options:
 \describe{
@@ -71,6 +75,16 @@ replications associated with each fidelity level (defaults to low/med/high).}
 \item{fidelity_costs}{named numeric vector of relative costs per fidelity level.
 If NULL (default), assumes cost proportional to replication count. Use to
 specify non-linear cost relationships (e.g., parallelization effects).}
+
+\item{fidelity_cv_threshold}{coefficient of variation threshold for fidelity
+promotion in staged method. Designs with CV > threshold are promoted to
+higher fidelity. Default 0.05 (tightened from 0.18 for constraint robustness).
+Lower values = more conservative, require more replications before accepting.}
+
+\item{fidelity_prob_range}{two-element vector giving feasibility probability
+range [min, max] for adaptive fidelity promotion. Points within this range
+are near constraint boundaries and benefit from higher fidelity. Default
+c(0.2, 0.8) identifies uncertain feasibility regions.}
 
 \item{acquisition}{acquisition rule to use (currently only `"eci"` is
 implemented).}

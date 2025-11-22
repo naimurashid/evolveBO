@@ -390,7 +390,11 @@ bo_calibrate <- function(sim_fun,
         candidate_pool = candidate_pool,
         objective = objective
       ),
-      diagnostics = diagnostics
+      diagnostics = diagnostics,
+      # NEW: Store bounds and constraints for warm-starting
+      bounds = bounds,
+      constraints = constraints,
+      constraint_tbl = constraint_tbl
     ),
     class = c("evolveBO_fit", "list")
   )

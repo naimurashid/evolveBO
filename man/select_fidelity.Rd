@@ -4,7 +4,7 @@
 \alias{select_fidelity}
 \title{Legacy fidelity selection (simple threshold-based)}
 \usage{
-select_fidelity(prob_feasible, fidelity_levels)
+select_fidelity(prob_feasible, fidelity_levels, ...)
 }
 \description{
 Legacy fidelity selection (simple threshold-based)

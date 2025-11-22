@@ -4,7 +4,15 @@
 \alias{select_fidelity_staged}
 \title{Select fidelity using staged multi-fidelity strategy}
 \usage{
-select_fidelity_staged(prob_feasible, cv_estimate, iter, fidelity_levels)
+select_fidelity_staged(
+  prob_feasible,
+  cv_estimate,
+  iter,
+  fidelity_levels,
+  cv_threshold = 0.05,
+  prob_range = c(0.2, 0.8),
+  ...
+)
 }
 \arguments{
 \item{prob_feasible}{probability of constraint satisfaction}
