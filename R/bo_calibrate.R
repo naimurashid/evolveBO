@@ -46,9 +46,15 @@
 #'     \item{\code{"adaptive"}}{(default) Cost-aware selection based on expected
 #'       value per unit cost. Balances information gain vs computational expense.
 #'       Recommended for most use cases.}
+#'     \item{\code{"hybrid_staged"}}{MCEM-inspired continuous escalation with
+#'       dynamic fidelity levels and metric-specific CV thresholds. Combines
+#'       iteration-based staging with responsive escalation. Features: dynamic
+#'       level scaling (5000->10000->15000 for high), constraint vs objective
+#'       differentiation, boundary detection, budget safeguards. Based on empirical
+#'       patterns from BOHB and materials discovery literature.}
 #'     \item{\code{"staged"}}{Fixed schedule with iteration-based thresholds.
 #'       Iterations 1-30: low, 31-100: adaptive, 101+: high. Simple but less
-#'       efficient than adaptive.}
+#'       efficient than adaptive or hybrid_staged.}
 #'     \item{\code{"threshold"}}{Simple feasibility probability thresholds.
 #'       P >= 0.75: high, P >= 0.4: med, else: low. Legacy method, not recommended.}
 #'   }
@@ -93,7 +99,7 @@ bo_calibrate <- function(sim_fun,
                          budget = 300,
                          seed = 2025,
                          fidelity_levels = c(low = 2000, med = 4000, high = 10000),
-                         fidelity_method = c("adaptive", "staged", "threshold"),
+                         fidelity_method = c("adaptive", "staged", "threshold", "hybrid_staged"),
                          fidelity_costs = NULL,
                          fidelity_cv_threshold = 0.05,
                          fidelity_prob_range = c(0.2, 0.8),
@@ -158,6 +164,15 @@ bo_calibrate <- function(sim_fun,
   iter_counter <- 0L
   last_best_objective <- NA_real_
 
+  # Store original base fidelity levels for dynamic scaling (hybrid_staged method)
+  base_fidelity_levels <- fidelity_levels
+
+  # Extract constraint metric names for metric-specific CV thresholds
+  constraint_metric_names <- constraint_tbl$metric
+
+  # Initialize budget tracking for dynamic fidelity
+  cumulative_budget_used <- 0
+
   for (theta in initial_design) {
     theta <- coerce_theta_types(theta, integer_params)
     eval_counter <- eval_counter + 1L
@@ -190,6 +205,23 @@ bo_calibrate <- function(sim_fun,
 
   while (eval_counter < budget) {
     iter_counter <- iter_counter + 1L
+
+    # Compute dynamic fidelity levels for hybrid_staged method
+    if (fidelity_method == "hybrid_staged") {
+      fidelity_levels <- compute_dynamic_fidelity_levels(
+        iter = iter_counter,
+        budget = budget,
+        base_levels = base_fidelity_levels,
+        budget_used = cumulative_budget_used,
+        budget_tolerance = 1.2,
+        batch_size = q
+      )
+      if (progress && iter_counter %% 10 == 1) {
+        message(sprintf("  Dynamic fidelity levels: low=%d, med=%d, high=%d",
+                        fidelity_levels["low"], fidelity_levels["med"], fidelity_levels["high"]))
+      }
+    }
+
     if (progress) {
       message(sprintf("Iteration %d: fitting surrogates on %d evaluations.",
                       iter_counter, nrow(history)))
@@ -265,9 +297,43 @@ bo_calibrate <- function(sim_fun,
         constraint_tbl = constraint_tbl
       )
 
-      # Get CV (coefficient of variation) from surrogate for objective
-      pred_obj <- predict_surrogates(surrogates, list(chosen_unit))[[objective]]
-      cv_estimate <- pred_obj$sd[[1]] / max(abs(pred_obj$mean[[1]]), 1e-6)
+      # Get all surrogate predictions for CV computation
+      all_preds <- predict_surrogates(surrogates, list(chosen_unit))
+
+      # Compute CV for objective
+      pred_obj <- all_preds[[objective]]
+      cv_objective <- pred_obj$sd[[1]] / max(abs(pred_obj$mean[[1]]), 1e-6)
+
+      # Compute CVs for all constraint metrics
+      cv_constraints <- sapply(constraint_metric_names, function(metric_name) {
+        if (metric_name %in% names(all_preds)) {
+          pred <- all_preds[[metric_name]]
+          pred$sd[[1]] / max(abs(pred$mean[[1]]), 1e-6)
+        } else {
+          0  # if metric not available, assume low uncertainty
+        }
+      })
+
+      # For hybrid_staged: use max CV across constraints (tighter precision needed)
+      # For other methods: use objective CV only
+      if (fidelity_method == "hybrid_staged") {
+        # Use maximum CV across all metrics, weighted toward constraints
+        # This ensures we escalate if ANY metric needs higher precision
+        max_constraint_cv <- max(cv_constraints, na.rm = TRUE)
+        # If constraints have high CV or we're near boundary, prioritize constraint precision
+        if (prob_feas >= 0.4 && prob_feas <= 0.7 && max_constraint_cv > cv_objective) {
+          cv_estimate <- max_constraint_cv
+          effective_metric <- constraint_metric_names[which.max(cv_constraints)]
+        } else {
+          # Otherwise use objective CV
+          cv_estimate <- cv_objective
+          effective_metric <- objective
+        }
+      } else {
+        # Other methods just use objective CV
+        cv_estimate <- cv_objective
+        effective_metric <- objective
+      }
 
       # Get acquisition value for this candidate
       acq_val <- acquisition_scores[selected_idx[i]]
@@ -275,6 +341,18 @@ bo_calibrate <- function(sim_fun,
       # Compute total budget used so far
       total_budget_used <- sum(history$n_rep, na.rm = TRUE)
       total_budget_sim <- budget * mean(fidelity_levels)  # approximate
+
+      # Compute distance to current best for hybrid_staged proximity bonus
+      distance_to_best <- 1.0  # default: far from best
+      if (!is.na(best_feasible_value)) {
+        # Find best feasible design
+        best_idx <- which(history$feasible & history[[objective]] == best_feasible_value)
+        if (length(best_idx) > 0) {
+          best_theta <- history[best_idx[1], names(bounds), drop = FALSE]
+          # Euclidean distance in scaled [0,1] space
+          distance_to_best <- sqrt(sum((chosen_unit - scale_to_unit(as.numeric(best_theta), bounds))^2))
+        }
+      }
 
       # Select fidelity using configured method
       fidelity <- select_fidelity_method(
@@ -289,8 +367,18 @@ bo_calibrate <- function(sim_fun,
         total_budget_used = total_budget_used,
         total_budget = total_budget_sim,
         cv_threshold = fidelity_cv_threshold,
-        prob_range = fidelity_prob_range
+        cv_threshold_base = fidelity_cv_threshold,
+        prob_range = fidelity_prob_range,
+        metric = effective_metric,  # Now uses actual metric (constraint or objective)
+        constraint_metrics = constraint_metric_names,
+        distance_to_best = distance_to_best
       )
+
+      # Debug output for fidelity selection (if enabled)
+      if (getOption("evolveBO.debug_fidelity", FALSE) && fidelity_method == "hybrid_staged") {
+        message(sprintf("  [Fidelity Debug] iter=%d, prob_feas=%.3f, cv=%.3f, metric=%s, selected=%s",
+                        iter_counter, prob_feas, cv_estimate, effective_metric, fidelity))
+      }
 
       history <- record_evaluation(
         history = history,
@@ -310,6 +398,9 @@ bo_calibrate <- function(sim_fun,
                      acq_score = acq_val),
         ...
       )
+
+      # Update cumulative budget for dynamic fidelity tracking
+      cumulative_budget_used <- sum(history$n_rep, na.rm = TRUE)
 
       current_best <- best_feasible_objective(history, objective)
       if (progress && !is.na(current_best) && !is.na(last_best_objective)) {
@@ -617,6 +708,257 @@ estimate_candidate_feasibility <- function(surrogates, unit_x, constraint_tbl) {
 #' - Iterations 101+: high fidelity near optimum and boundaries
 #'
 #' @param prob_feasible probability of constraint satisfaction
+#' Compute dynamic fidelity levels based on iteration progress
+#'
+#' Implements MCEM-inspired continuous escalation by scaling fidelity levels
+#' as the optimization progresses. Balances exploration (low cost) vs refinement
+#' (high precision) with budget safeguards.
+#'
+#' @param iter current BO iteration number (not evaluation count)
+#' @param budget total evaluation budget
+#' @param base_levels named vector of base fidelity levels (e.g., c(low=200, med=1000, high=5000))
+#' @param budget_used cumulative computational budget consumed (sum of n_rep)
+#' @param budget_tolerance maximum allowed budget overhead (default 1.2 = 20% over)
+#' @param batch_size batch size q for computing iteration phases
+#'
+#' @details
+#' Scaling strategy based on empirical patterns from BOHB and materials discovery:
+#' \itemize{
+#'   \item \strong{Early phase} (iter < 20% budget): Base levels - exploration phase
+#'   \item \strong{Middle phase} (20% <= iter < 60%): 1.5x scaling - focused search
+#'   \item \strong{Late phase} (iter >= 60%): High-fidelity levels increase to 2x/3x - refinement
+#' }
+#'
+#' Moderate scaling for high fidelity: 5000 -> 10000 -> 15000 (user feedback)
+#'
+#' Budget safeguard: Caps scaling if theoretical budget would exceed tolerance.
+#'
+#' @return named numeric vector of adjusted fidelity levels
+#' @keywords internal
+#'
+#' @references
+#' Falkner et al. (2018). BOHB: Robust and Efficient Hyperparameter Optimization. ICML.
+#' Wu & Frazier (2019). Practical Multi-fidelity Bayesian Optimization. UAI.
+compute_dynamic_fidelity_levels <- function(iter,
+                                            budget,
+                                            base_levels,
+                                            budget_used = 0,
+                                            budget_tolerance = 1.2,
+                                            batch_size = 1) {
+  # Calculate iteration phase (0 to 1)
+  # Approximate max BO iterations (after initial design)
+  # Note: n_init not directly available here, so we estimate
+  estimated_bo_evals <- pmax(1, budget * 0.7)  # assume ~30% for initial design
+  max_iters <- ceiling(estimated_bo_evals / batch_size)
+  iter_fraction <- pmin(1, iter / max(max_iters, 1))
+
+  # Theoretical budget: approximate total simulation cost
+  theoretical_budget <- budget * mean(base_levels)
+
+  # Check if we're approaching budget limits
+  budget_fraction_used <- budget_used / max(theoretical_budget, 1)
+
+  # Determine scaling factors based on phase
+  if (iter_fraction < 0.2) {
+    # Early phase: base levels for exploration
+    scale_low <- 1.0
+    scale_med <- 1.0
+    scale_high <- 1.0
+  } else if (iter_fraction < 0.6) {
+    # Middle phase: moderate scaling for focused search
+    scale_low <- 1.5
+    scale_med <- 1.5
+    scale_high <- 2.0  # 5000 -> 10000
+  } else {
+    # Late phase: aggressive scaling for refinement
+    # User feedback: moderate high levels (5000 -> 10000 -> 15000)
+    scale_low <- 2.0
+    scale_med <- 2.5
+    scale_high <- 3.0  # 5000 -> 10000 -> 15000
+  }
+
+  # Apply budget safeguard: reduce scaling if approaching limits
+  if (budget_fraction_used > 0.85) {
+    # Nearing budget limit - cap scaling
+    safety_factor <- pmax(0.5, 1 - (budget_fraction_used - 0.85) / 0.15)
+    scale_low <- 1 + (scale_low - 1) * safety_factor
+    scale_med <- 1 + (scale_med - 1) * safety_factor
+    scale_high <- 1 + (scale_high - 1) * safety_factor
+  }
+
+  # Ensure we don't exceed budget tolerance
+  proposed_levels <- c(
+    low = unname(base_levels["low"]) * scale_low,
+    med = unname(base_levels["med"]) * scale_med,
+    high = unname(base_levels["high"]) * scale_high
+  )
+
+  # Check if proposed levels would violate budget
+  proposed_mean <- mean(proposed_levels, na.rm = TRUE)
+  remaining_budget_evals <- pmax(1, budget - budget_used / mean(base_levels, na.rm = TRUE))
+
+  if (!is.na(proposed_mean) && proposed_mean * remaining_budget_evals > theoretical_budget * budget_tolerance) {
+    # Scale back proportionally
+    max_allowed_mean <- (theoretical_budget * budget_tolerance) / (remaining_budget_evals + 1e-6)
+    reduction <- max_allowed_mean / (proposed_mean + 1e-6)
+    reduction <- pmax(0, pmin(1, reduction))  # clamp to [0, 1]
+    proposed_levels <- base_levels + (proposed_levels - base_levels) * reduction
+  }
+
+  # Round to integer replication counts
+  proposed_levels <- round(proposed_levels)
+
+  # Ensure minimum levels (never go below base) and handle any NAs
+  proposed_levels <- pmax(proposed_levels, base_levels, na.rm = TRUE)
+  # Replace any remaining NAs with base levels
+  proposed_levels[is.na(proposed_levels)] <- base_levels[is.na(proposed_levels)]
+
+  proposed_levels
+}
+
+#' Hybrid staged-adaptive fidelity selection with metric-specific thresholds
+#'
+#' Combines iteration-based staging (BOHB-style) with metric-specific CV thresholds
+#' for escalation. Implements empirically-validated patterns from multi-fidelity BO
+#' literature while handling multi-constraint trial calibration.
+#'
+#' @param prob_feasible probability of constraint satisfaction
+#' @param cv_estimate coefficient of variation from objective surrogate
+#' @param iter current iteration number
+#' @param fidelity_levels named vector of fidelity levels (possibly dynamic)
+#' @param metric name of metric being optimized (for metric-specific thresholds)
+#' @param constraint_metrics character vector of constraint metric names
+#' @param cv_threshold_base base CV threshold for escalation (default 0.10)
+#' @param prob_range feasibility probability range for boundary detection
+#' @param distance_to_best normalized distance to current best (0-1 scale)
+#' @param ... additional arguments (for compatibility)
+#'
+#' @details
+#' Three-stage strategy:
+#' \itemize{
+#'   \item \strong{Stage 1} (exploration): Primarily low fidelity, escalate only for very high uncertainty
+#'   \item \strong{Stage 2} (focused search): Balanced mix, metric-specific CV thresholds
+#'   \item \strong{Stage 3} (refinement): Aggressive high-fidelity promotion for feasible regions
+#' }
+#'
+#' Metric-specific CV thresholds:
+#' \itemize{
+#'   \item Constraints (power, type1): 0.10 (tight for binary outcomes, boundary precision critical)
+#'   \item Objective (EN, ET): 0.20 (looser for continuous high-variance metrics)
+#'   \item Near-boundary bonus: 33% tighter thresholds when 0.4 < P(feasible) < 0.7
+#'   \item Near-optimum bonus: 50% tighter when close to current best design
+#' }
+#'
+#' @return name of selected fidelity level
+#' @keywords internal
+#'
+#' @references
+#' Falkner et al. (2018). BOHB: Robust and Efficient Hyperparameter Optimization. ICML.
+#' Jiang et al. (2024). Efficient Hyperparameter Optimization with Adaptive Fidelity. CVPR.
+#' Richter et al. (2022). Improving adaptive seamless designs through Bayesian optimization. Biom J.
+select_fidelity_hybrid_staged <- function(prob_feasible,
+                                          cv_estimate,
+                                          iter,
+                                          fidelity_levels,
+                                          metric = NULL,
+                                          constraint_metrics = NULL,
+                                          cv_threshold_base = 0.10,
+                                          prob_range = c(0.2, 0.8),
+                                          distance_to_best = 1.0,
+                                          ...) {
+  if (length(fidelity_levels) == 1L) {
+    return(names(fidelity_levels))
+  }
+
+  fidelity_names <- names(fidelity_levels)
+
+  # Determine metric-specific CV threshold
+  # Constraints need tighter thresholds (binary outcomes, boundary precision)
+  # Objectives can tolerate more variance (continuous, averaged outcomes)
+  if (!is.null(metric) && !is.null(constraint_metrics)) {
+    if (metric %in% constraint_metrics) {
+      cv_thresh <- cv_threshold_base  # tight: 0.10
+    } else {
+      cv_thresh <- cv_threshold_base * 2  # looser: 0.20
+    }
+  } else {
+    # Default: assume objective metric (looser)
+    cv_thresh <- cv_threshold_base * 1.5
+  }
+
+  # Near-boundary bonus: tighten threshold by 33% for critical regions
+  if (prob_feasible >= 0.4 && prob_feasible <= 0.7) {
+    cv_thresh <- cv_thresh * 0.67
+  }
+
+  # Near-optimum bonus: tighten threshold by 50% when close to best
+  if (distance_to_best < 0.2) {
+    cv_thresh <- cv_thresh * 0.5
+  }
+
+  # === Three-stage strategy ===
+
+  # Stage 1: Exploration (first 20% of iterations)
+  # Primarily low fidelity, escalate only for very high uncertainty
+  if (iter <= 20) {
+    # Escalate to medium if very uncertain OR near boundary
+    if (cv_estimate > 0.25 || (cv_estimate > 0.15 && prob_feasible >= 0.3 && prob_feasible <= 0.7)) {
+      if ("med" %in% fidelity_names) {
+        return("med")
+      }
+    }
+    # Default: low fidelity for exploration
+    return(fidelity_names[1])
+  }
+
+  # Stage 3: Refinement (last 40% of iterations, iter > 60 typically)
+  # Aggressive high-fidelity promotion for promising regions
+  if (iter > 60) {
+    # High fidelity for:
+    # 1. Likely feasible designs (P > 0.7)
+    # 2. Boundary regions with uncertainty
+    # 3. Nearby current best
+    if ((prob_feasible > 0.7 && "high" %in% fidelity_names) ||
+        (prob_feasible >= 0.4 && prob_feasible <= 0.7 && cv_estimate > cv_thresh && "high" %in% fidelity_names) ||
+        (distance_to_best < 0.15 && "high" %in% fidelity_names)) {
+      return("high")
+    }
+
+    # Medium fidelity for moderately promising designs
+    if (prob_feasible >= 0.4 && "med" %in% fidelity_names) {
+      return("med")
+    }
+
+    # Low fidelity for exploration of unlikely regions
+    return(fidelity_names[1])
+  }
+
+  # Stage 2: Focused search (middle 60%, iterations 21-60)
+  # Balanced mix with metric-specific CV-based escalation
+
+  # Promote to high fidelity if:
+  # 1. High uncertainty (CV > threshold) AND near boundary, OR
+  # 2. Very likely feasible (P > 0.8) with moderate uncertainty
+  if ("high" %in% fidelity_names) {
+    if ((cv_estimate > cv_thresh && prob_feasible >= prob_range[1] && prob_feasible <= prob_range[2]) ||
+        (prob_feasible > 0.8 && cv_estimate > cv_thresh * 0.5)) {
+      return("high")
+    }
+  }
+
+  # Promote to medium fidelity for:
+  # 1. Moderately promising regions (P >= 0.4), OR
+  # 2. Moderate uncertainty anywhere
+  if ("med" %in% fidelity_names) {
+    if (prob_feasible >= 0.4 || cv_estimate > cv_thresh * 1.5) {
+      return("med")
+    }
+  }
+
+  # Default: low fidelity for unpromising regions
+  fidelity_names[1]
+}
+
 #' @param cv_estimate coefficient of variation from surrogate
 #' @param iter current iteration number
 #' @param fidelity_levels named vector of fidelity levels
@@ -677,7 +1019,7 @@ select_fidelity <- function(prob_feasible, fidelity_levels, ...) {
 #'
 #' Routes fidelity selection to the appropriate strategy based on method argument.
 #'
-#' @param method fidelity selection method ("adaptive", "staged", "threshold")
+#' @param method fidelity selection method ("adaptive", "staged", "threshold", "hybrid_staged")
 #' @param ... arguments passed to specific selection function
 #'
 #' @return name of selected fidelity level
@@ -687,6 +1029,7 @@ select_fidelity_method <- function(method, ...) {
          adaptive = select_fidelity_adaptive(...),
          staged = select_fidelity_staged(...),
          threshold = select_fidelity(...),
+         hybrid_staged = select_fidelity_hybrid_staged(...),
          stop("Unknown fidelity method: ", method, call. = FALSE)
   )
 }
