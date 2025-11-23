@@ -465,10 +465,19 @@ bo_calibrate <- function(sim_fun,
 
   diagnostics <- generate_diagnostics(final_surrogates, history, objective)
 
+  # Compute best objective value from feasible solutions
+  feasible_history <- history[history$feasible, , drop = FALSE]
+  best_objective <- if (nrow(feasible_history) > 0) {
+    min(feasible_history$objective, na.rm = TRUE)
+  } else {
+    NA_real_
+  }
+
   structure(
     list(
       history = history,
       best_theta = best_theta,
+      best_objective = best_objective,
       surrogates = final_surrogates,
       policies = list(
         acquisition = acquisition,
