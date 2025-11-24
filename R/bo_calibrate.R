@@ -38,6 +38,14 @@
 #' @param budget total number of simulator evaluations (initial + BO iterations).
 #'   Default 300 (increased from 150 for tight constraint spaces).
 #' @param seed base RNG seed for reproducibility.
+#' @param initial_history optional data frame of previous evaluations to use as
+#'   initialization instead of random Latin hypercube sampling. If provided,
+#'   \code{n_init} is ignored and the BO loop starts immediately with this data.
+#'   Must contain columns for all parameters in \code{bounds}, plus \code{objective},
+#'   \code{fidelity}, \code{feasible}, and individual constraint metric columns.
+#'   All rows must be within the specified \code{bounds}. This enables multi-stage
+#'   warm-starting where later stages reuse evaluations from previous stages with
+#'   narrowed bounds. Default: NULL (use random initialization).
 #' @param fidelity_levels named numeric vector giving the number of simulator
 #'   replications associated with each fidelity level. Default: c(low=2000, med=4000,
 #'   high=10000), increased from (200, 1000, 10000) for reduced Monte Carlo variance.
@@ -98,6 +106,7 @@ bo_calibrate <- function(sim_fun,
                          q = 8,
                          budget = 300,
                          seed = 2025,
+                         initial_history = NULL,
                          fidelity_levels = c(low = 2000, med = 4000, high = 10000),
                          fidelity_method = c("adaptive", "staged", "threshold", "hybrid_staged"),
                          fidelity_costs = NULL,
@@ -157,10 +166,66 @@ bo_calibrate <- function(sim_fun,
 
   history <- initialise_history()
 
-  n_init <- min(n_init, budget)
-  initial_design <- lhs_design(n_init, bounds, seed = rng_seed)
+  # Handle initial_history parameter (v0.4.0 warm-start feature)
+  if (!is.null(initial_history)) {
+    # Validate initial_history
+    param_names <- names(bounds)
+    required_cols <- c(param_names, "objective", "fidelity", "feasible")
 
-  eval_counter <- 0L
+    missing_cols <- setdiff(required_cols, names(initial_history))
+    if (length(missing_cols) > 0) {
+      stop(sprintf(
+        "initial_history missing required columns: %s",
+        paste(missing_cols, collapse = ", ")
+      ), call. = FALSE)
+    }
+
+    # Validate that all rows are within bounds
+    for (param in param_names) {
+      vals <- initial_history[[param]]
+      lower <- bounds[[param]][1]
+      upper <- bounds[[param]][2]
+
+      out_of_bounds <- vals < lower | vals > upper
+      if (any(out_of_bounds, na.rm = TRUE)) {
+        stop(sprintf(
+          "initial_history contains %d rows with %s outside bounds [%g, %g]",
+          sum(out_of_bounds, na.rm = TRUE), param, lower, upper
+        ), call. = FALSE)
+      }
+    }
+
+    # Use provided history
+    history <- initial_history
+    n_init_actual <- nrow(initial_history)
+
+    if (progress) {
+      message(sprintf(
+        "Using %d evaluations from initial_history (skipping random initialization)",
+        n_init_actual
+      ))
+    }
+
+    eval_counter <- n_init_actual
+
+  } else {
+    # Standard random initialization via Latin hypercube
+    n_init <- min(n_init, budget)
+    initial_design <- lhs_design(n_init, bounds, seed = rng_seed)
+
+    eval_counter <- 0L
+
+    for (theta in initial_design) {
+      theta <- coerce_theta_types(theta, integer_params)
+      eval_counter <- eval_counter + 1L
+      history <- record_evaluation(
+        history, theta, objective, constraint_tbl, sim_fun,
+        iter = 0L, eval_id = eval_counter, fidelity = primary_fidelity,
+        fidelity_levels = fidelity_levels, ...
+      )
+    }
+  }
+
   iter_counter <- 0L
   last_best_objective <- NA_real_
 
@@ -172,31 +237,6 @@ bo_calibrate <- function(sim_fun,
 
   # Initialize budget tracking for dynamic fidelity
   cumulative_budget_used <- 0
-
-  for (theta in initial_design) {
-    theta <- coerce_theta_types(theta, integer_params)
-    eval_counter <- eval_counter + 1L
-    history <- record_evaluation(
-      history = history,
-      sim_fun = sim_fun,
-      theta = theta,
-      bounds = bounds,
-      objective = objective,
-      constraint_tbl = constraint_tbl,
-      fidelity = primary_fidelity,
-      fidelity_levels = fidelity_levels,
-      eval_id = eval_counter,
-      iter = 0L,
-      seed = rng_seed + eval_counter,
-      progress = progress,
-      extra = list(prob_feas = NA_real_, cv_estimate = NA_real_, acq_score = NA_real_),
-      ...
-    )
-    current_best <- best_feasible_objective(history, objective)
-    if (!is.na(current_best)) {
-      last_best_objective <- current_best
-    }
-  }
 
   # Initialize for warm-starting and early stopping
   prev_surrogates <- NULL
