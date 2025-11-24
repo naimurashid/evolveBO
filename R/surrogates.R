@@ -116,9 +116,68 @@ fit_hetgp_surrogate <- function(history, metric, id_groups, param_names, covtype
   }, error = function(e) {
     warning(sprintf("hetGP fit failed for metric '%s': %s\nFalling back to homoskedastic GP.",
                     metric, e$message), call. = FALSE)
-    # Fall back to homoskedastic
-    hetGP::mleHomGP(X = X, Z = Z_vec, mult = mult, covtype = hetgp_cov,
-                   known = list(g = 1e-6))
+    # Fall back to homoskedastic GP
+    # Note: mleHomGP does NOT accept 'mult' argument - it expects pre-aggregated data
+    # Aggregate Z by unique X locations before fitting
+    X_unique_idx <- !duplicated(X)
+    X_agg <- X[X_unique_idx, , drop = FALSE]
+
+    # Aggregate Z values at each unique location
+    Z_agg <- sapply(seq_len(nrow(X_agg)), function(i) {
+      # Find all rows matching this X location
+      matching <- apply(X, 1, function(row) all(row == X_agg[i, ]))
+      mean(Z_vec[matching], na.rm = TRUE)
+    })
+
+    # Check for constant/near-constant data which causes GP fitting to fail
+    z_range <- diff(range(Z_agg, na.rm = TRUE))
+    if (z_range < 1e-10) {
+      warning(sprintf("Metric '%s' has constant or near-constant values (range=%.2e). Using DiceKriging fallback.",
+                      metric, z_range), call. = FALSE)
+      # Fall back to DiceKriging which handles constant data more gracefully
+      return(tryCatch({
+        DiceKriging::km(
+          design = X_agg,
+          response = Z_agg,
+          covtype = "matern5_2",
+          nugget = 1e-4,  # Larger nugget for stability
+          nugget.estim = FALSE,
+          control = list(trace = FALSE)
+        )
+      }, error = function(e2) {
+        # Ultimate fallback: return a dummy model that predicts the mean
+        warning(sprintf("All GP fits failed for metric '%s'. Using constant predictor.", metric), call. = FALSE)
+        structure(
+          list(mean_value = mean(Z_agg, na.rm = TRUE), metric = metric),
+          class = "constant_predictor"
+        )
+      }))
+    }
+
+    tryCatch({
+      hetGP::mleHomGP(X = X_agg, Z = Z_agg, covtype = hetgp_cov,
+                     known = list(g = 1e-6))
+    }, error = function(e2) {
+      warning(sprintf("mleHomGP also failed for metric '%s': %s\nUsing DiceKriging fallback.",
+                      metric, e2$message), call. = FALSE)
+      # Try DiceKriging as last resort before constant predictor
+      tryCatch({
+        DiceKriging::km(
+          design = X_agg,
+          response = Z_agg,
+          covtype = "matern5_2",
+          nugget = 1e-4,
+          nugget.estim = FALSE,
+          control = list(trace = FALSE)
+        )
+      }, error = function(e3) {
+        warning(sprintf("All GP fits failed for metric '%s'. Using constant predictor.", metric), call. = FALSE)
+        structure(
+          list(mean_value = mean(Z_agg, na.rm = TRUE), metric = metric),
+          class = "constant_predictor"
+        )
+      })
+    })
   })
 }
 
@@ -209,14 +268,19 @@ fit_dicekriging_surrogate <- function(history, metric, id_groups, param_names,
 #' Extract GP hyperparameters for warm-starting
 #'
 #' Extracts lengthscale parameters from a fitted GP model to use as
-#' initial values for the next optimization. Works with DiceKriging::km
-#' and hetGP models.
+#' initial values for the next optimization. Works with DiceKriging::km,
+#' hetGP, and homGP models.
 #'
-#' @param model fitted GP model (km or hetGP object), or NULL
+#' @param model fitted GP model (km, hetGP, homGP, or constant_predictor), or NULL
 #' @return numeric vector of hyperparameters, or NULL if extraction fails
 #' @keywords internal
 extract_gp_hyperparams <- function(model) {
   if (is.null(model)) {
+    return(NULL)
+  }
+
+  # Constant predictor has no hyperparameters
+  if (inherits(model, "constant_predictor")) {
     return(NULL)
   }
 
@@ -227,8 +291,8 @@ extract_gp_hyperparams <- function(model) {
       if (is.numeric(theta) && all(is.finite(theta)) && all(theta > 0)) {
         return(theta)
       }
-    } else if (inherits(model, "hetGP")) {
-      # hetGP model
+    } else if (inherits(model, c("hetGP", "homGP"))) {
+      # hetGP or homGP model (both use $theta)
       theta <- model$theta
       if (is.numeric(theta) && all(is.finite(theta)) && all(theta > 0)) {
         return(theta)
@@ -251,14 +315,18 @@ predict_surrogates <- function(surrogates, unit_x) {
     stop("No surrogate models available for prediction.", call. = FALSE)
   }
 
-  # Detect model type from first surrogate
-  first_model <- surrogates[[1]]
-  is_hetgp <- inherits(first_model, "hetGP")
-
-  if (is_hetgp) {
-    param_names <- colnames(first_model$X0)
-  } else {
-    param_names <- colnames(first_model@X)
+  # Detect model type from first non-constant surrogate to get param_names
+  param_names <- NULL
+  for (model in surrogates) {
+    if (inherits(model, "constant_predictor")) {
+      next
+    } else if (inherits(model, c("hetGP", "homGP"))) {
+      param_names <- colnames(model$X0)
+      break
+    } else if (inherits(model, "km")) {
+      param_names <- colnames(model@X)
+      break
+    }
   }
 
   if (is.null(param_names)) {
@@ -277,8 +345,14 @@ predict_surrogates <- function(surrogates, unit_x) {
   purrr::imap(
     surrogates,
     ~ {
-      if (inherits(.x, "hetGP")) {
-        # Use hetGP predict method
+      if (inherits(.x, "constant_predictor")) {
+        # Constant predictor fallback - returns constant mean with high uncertainty
+        n_points <- nrow(design_mat)
+        list(mean = rep(.x$mean_value, n_points),
+             sd = rep(1.0, n_points),  # High uncertainty to encourage exploration
+             model = .x)
+      } else if (inherits(.x, c("hetGP", "homGP"))) {
+        # Use hetGP/homGP predict method (same interface)
         pred <- predict(x = design_mat, object = .x)
         list(mean = as.numeric(pred$mean),
              sd = as.numeric(sqrt(pmax(pred$sd2, 0))),
