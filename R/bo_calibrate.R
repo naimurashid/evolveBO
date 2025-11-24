@@ -566,25 +566,40 @@ record_evaluation <- function(history,
   cv_val <- if (!is.null(extra$cv_estimate)) as.numeric(extra$cv_estimate) else NA_real_
   acq_val <- if (!is.null(extra$acq_score)) as.numeric(extra$acq_score) else NA_real_
 
-  dplyr::bind_rows(
-    history,
-    tibble::tibble(
-      iter = iter,
-      eval_id = eval_id,
-      theta = list(theta),
-      unit_x = list(unit_theta),
-      theta_id = theta_id,
-      fidelity = fidelity,
-      n_rep = n_rep,
-      metrics = list(metrics),
-      variance = list(variance),
-      objective = objective_value,
-      feasible = feasible,
-      prob_feas = prob_feas_val,
-      cv_estimate = cv_val,
-      acq_score = acq_val
-    )
+  # Unpack metrics into individual columns for easier access
+  # This allows adaptive bounds functions to directly access constraint metrics
+  metrics_df <- if (length(metrics) > 0) {
+    as.data.frame(as.list(metrics), stringsAsFactors = FALSE)
+  } else {
+    data.frame()
+  }
+
+  # Create base row
+  base_row <- tibble::tibble(
+    iter = iter,
+    eval_id = eval_id,
+    theta = list(theta),
+    unit_x = list(unit_theta),
+    theta_id = theta_id,
+    fidelity = fidelity,
+    n_rep = n_rep,
+    metrics = list(metrics),
+    variance = list(variance),
+    objective = objective_value,
+    feasible = feasible,
+    prob_feas = prob_feas_val,
+    cv_estimate = cv_val,
+    acq_score = acq_val
   )
+
+  # Combine with unpacked metrics
+  if (ncol(metrics_df) > 0) {
+    new_row <- dplyr::bind_cols(base_row, metrics_df)
+  } else {
+    new_row <- base_row
+  }
+
+  dplyr::bind_rows(history, new_row)
 }
 
 #' @keywords internal
