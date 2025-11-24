@@ -398,9 +398,9 @@ bo_calibrate <- function(sim_fun,
         # Find best feasible design
         best_idx <- which(history$feasible & history[[objective]] == best_feasible_value)
         if (length(best_idx) > 0) {
-          best_theta <- history[best_idx[1], names(bounds), drop = FALSE]
+          best_theta <- history$theta[[best_idx[1]]]
           # Euclidean distance in scaled [0,1] space
-          distance_to_best <- sqrt(sum((chosen_unit - scale_to_unit(as.numeric(best_theta), bounds))^2))
+          distance_to_best <- sqrt(sum((chosen_unit - unlist(scale_to_unit(best_theta, bounds)))^2))
         }
       }
 
