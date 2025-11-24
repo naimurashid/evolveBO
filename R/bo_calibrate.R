@@ -219,9 +219,19 @@ bo_calibrate <- function(sim_fun,
       theta <- coerce_theta_types(theta, integer_params)
       eval_counter <- eval_counter + 1L
       history <- record_evaluation(
-        history, theta, objective, constraint_tbl, sim_fun,
-        iter = 0L, eval_id = eval_counter, fidelity = primary_fidelity,
-        fidelity_levels = fidelity_levels, ...
+        history = history,
+        sim_fun = sim_fun,
+        theta = theta,
+        bounds = bounds,
+        objective = objective,
+        constraint_tbl = constraint_tbl,
+        fidelity = primary_fidelity,
+        fidelity_levels = fidelity_levels,
+        eval_id = eval_counter,
+        iter = 0L,
+        seed = rng_seed + eval_counter,
+        progress = progress,
+        ...
       )
     }
   }
