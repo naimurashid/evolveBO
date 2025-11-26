@@ -60,3 +60,111 @@ prob_feasibility <- function(mean, sd, constraint_tbl) {
   }) |>
     prod()
 }
+
+
+#' Filter History for New Constraints
+#'
+#' When adding constraints in later stages, filters history to only include
+#' rows that have the required metrics (not NA). This prevents poisoning
+#' the GP surrogate with incomplete data from earlier stages that didn't
+#' evaluate the new constraint metrics.
+#'
+#' @param history Data frame from previous stage(s)
+#' @param new_constraints Named list of new constraints being added
+#'   (e.g., list(power = c("ge", 0.80)))
+#' @param verbose Logical: print filtering details?
+#'
+#' @return List with:
+#'   \describe{
+#'     \item{history}{Filtered history data frame, or NULL if all rows dropped}
+#'     \item{n_original}{Integer: original row count}
+#'     \item{n_retained}{Integer: retained row count}
+#'     \item{metrics_checked}{Character: names of metrics that were checked}
+#'   }
+#'
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Stage 2 adds PET constraint not evaluated in Stage 1
+#' new_constraints_s2 <- list(PET_fut_null = c("ge", 0.30))
+#'
+#' result <- filter_history_for_constraints(
+#'   history = fit_s1$history,
+#'   new_constraints = new_constraints_s2
+#' )
+#'
+#' if (result$n_retained > 0) {
+#'   # Use filtered history for Stage 2 warmstart
+#'   initial_history_s2 <- result$history
+#' } else {
+#'   # Stage 2 must start fresh (no usable history)
+#'   initial_history_s2 <- NULL
+#' }
+#' }
+filter_history_for_constraints <- function(history, new_constraints, verbose = TRUE) {
+
+  if (is.null(history) || nrow(history) == 0) {
+    return(list(history = NULL, n_original = 0, n_retained = 0, metrics_checked = character()))
+  }
+
+  n_original <- nrow(history)
+  required_metrics <- names(new_constraints)
+
+  if (length(required_metrics) == 0) {
+    return(list(history = history, n_original = n_original,
+                n_retained = n_original, metrics_checked = character()))
+  }
+
+  # Check which metrics are available
+  metrics_present <- intersect(required_metrics, names(history))
+  metrics_missing <- setdiff(required_metrics, names(history))
+
+  if (length(metrics_missing) > 0 && verbose) {
+    cat(sprintf("  Warning: Constraint metrics not in history columns: %s\n",
+                paste(metrics_missing, collapse = ", ")))
+    cat("  Will check metrics list-column if available\n")
+  }
+
+  # Build mask: TRUE if row has all required metrics (not NA)
+  keep_mask <- rep(TRUE, n_original)
+
+  for (metric in required_metrics) {
+    if (metric %in% names(history)) {
+      # Check column directly
+      keep_mask <- keep_mask & !is.na(history[[metric]])
+    } else if ("metrics" %in% names(history) && is.list(history$metrics)) {
+      # Check metrics list-column
+      has_metric <- sapply(history$metrics, function(m) {
+        if (is.null(m)) return(FALSE)
+        metric %in% names(m) && !is.na(m[[metric]])
+      })
+      keep_mask <- keep_mask & has_metric
+    } else {
+      # Metric not available anywhere - drop all rows
+      if (verbose) {
+        cat(sprintf("  Warning: Metric '%s' not found in history - dropping all rows\n", metric))
+      }
+      keep_mask <- rep(FALSE, n_original)
+      break
+    }
+  }
+
+  filtered <- history[keep_mask, , drop = FALSE]
+  n_retained <- nrow(filtered)
+
+  if (verbose) {
+    cat(sprintf("  Filtered history for new constraints: %d -> %d rows (%.1f%% retained)\n",
+                n_original, n_retained, 100 * n_retained / n_original))
+    if (n_retained == 0) {
+      cat("  Warning: No rows have all required constraint metrics - Stage will use random init\n")
+    }
+  }
+
+  list(
+    history = if (n_retained > 0) filtered else NULL,
+    n_original = n_original,
+    n_retained = n_retained,
+    metrics_checked = required_metrics
+  )
+}

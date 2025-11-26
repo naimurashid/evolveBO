@@ -13,8 +13,9 @@ bo_calibrate(
   q = 8,
   budget = 300,
   seed = 2025,
+  initial_history = NULL,
   fidelity_levels = c(low = 2000, med = 4000, high = 10000),
-  fidelity_method = c("adaptive", "staged", "threshold"),
+  fidelity_method = c("adaptive", "staged", "threshold", "hybrid_staged"),
   fidelity_costs = NULL,
   fidelity_cv_threshold = 0.05,
   fidelity_prob_range = c(0.2, 0.8),
@@ -56,6 +57,15 @@ Default 300 (increased from 150 for tight constraint spaces).}
 
 \item{seed}{base RNG seed for reproducibility.}
 
+\item{initial_history}{optional data frame of previous evaluations to use as
+initialization instead of random Latin hypercube sampling. If provided,
+\code{n_init} is ignored and the BO loop starts immediately with this data.
+Must contain columns for all parameters in \code{bounds}, plus \code{objective},
+\code{fidelity}, \code{feasible}, and individual constraint metric columns.
+All rows must be within the specified \code{bounds}. This enables multi-stage
+warm-starting where later stages reuse evaluations from previous stages with
+narrowed bounds. Default: NULL (use random initialization).}
+
 \item{fidelity_levels}{named numeric vector giving the number of simulator
 replications associated with each fidelity level. Default: c(low=2000, med=4000,
 high=10000), increased from (200, 1000, 10000) for reduced Monte Carlo variance.}
@@ -65,9 +75,15 @@ high=10000), increased from (200, 1000, 10000) for reduced Monte Carlo variance.
   \item{\code{"adaptive"}}{(default) Cost-aware selection based on expected
     value per unit cost. Balances information gain vs computational expense.
     Recommended for most use cases.}
+  \item{\code{"hybrid_staged"}}{MCEM-inspired continuous escalation with
+    dynamic fidelity levels and metric-specific CV thresholds. Combines
+    iteration-based staging with responsive escalation. Features: dynamic
+    level scaling (5000->10000->15000 for high), constraint vs objective
+    differentiation, boundary detection, budget safeguards. Based on empirical
+    patterns from BOHB and materials discovery literature.}
   \item{\code{"staged"}}{Fixed schedule with iteration-based thresholds.
     Iterations 1-30: low, 31-100: adaptive, 101+: high. Simple but less
-    efficient than adaptive.}
+    efficient than adaptive or hybrid_staged.}
   \item{\code{"threshold"}}{Simple feasibility probability thresholds.
     P >= 0.75: high, P >= 0.4: med, else: low. Legacy method, not recommended.}
 }}

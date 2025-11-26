@@ -7,7 +7,7 @@
 select_fidelity_method(method, ...)
 }
 \arguments{
-\item{method}{fidelity selection method ("adaptive", "staged", "threshold")}
+\item{method}{fidelity selection method ("adaptive", "staged", "threshold", "hybrid_staged")}
 
 \item{...}{arguments passed to specific selection function}
 }

@@ -380,3 +380,154 @@ sequential_refinement <- function(sim_fun,
     improvement_pct = improvement
   ))
 }
+
+
+#' Determine if a Stage Should be Skipped
+#'
+#' Implements adaptive stage-skipping logic for multi-stage BO:
+#' - Skip if active dimensions <= threshold after dimension reduction
+#' - Skip if previous stage converged (based on improvement stagnation)
+#' - Skip if no improvement in recent evaluations
+#'
+#' @param active_dims Integer: number of active (non-fixed) dimensions
+#' @param dim_threshold Integer: skip if active_dims <= this (default: 2)
+#' @param prev_stage_history Data frame: history from previous stage (optional)
+#' @param prev_converged Logical: whether previous stage showed convergence
+#'   (default: FALSE)
+#' @param objective Character: objective metric name (default: "EN")
+#' @param improvement_threshold Numeric: relative improvement threshold for
+#'   convergence detection (default: 1e-3)
+#' @param patience Integer: number of recent batches to check for improvement
+#'   (default: 3)
+#' @param verbose Logical: print skip decision details?
+#'
+#' @return List with:
+#'   \describe{
+#'     \item{skip}{Logical: whether to skip the stage}
+#'     \item{reason}{Character: reason for skipping, or NULL if not skipping}
+#'     \item{diagnostics}{List with decision details: active_dims, dim_threshold,
+#'       prev_converged, checked_improvement, best_improvement}
+#'   }
+#'
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Before Stage 3
+#' skip_check <- should_skip_stage(
+#'   active_dims = 3,
+#'   dim_threshold = 2,
+#'   prev_stage_history = fit_s2$history,
+#'   prev_converged = FALSE,
+#'   objective = "EN",
+#'   patience = 3
+#' )
+#'
+#' if (skip_check$skip) {
+#'   cat("Skipping Stage 3:", skip_check$reason, "\n")
+#' }
+#' }
+should_skip_stage <- function(
+  active_dims,
+  dim_threshold = 2,
+  prev_stage_history = NULL,
+  prev_converged = FALSE,
+  objective = "EN",
+  improvement_threshold = 1e-3,
+  patience = 3,
+  verbose = TRUE
+) {
+
+  diagnostics <- list(
+    active_dims = active_dims,
+    dim_threshold = dim_threshold,
+    prev_converged = prev_converged,
+    checked_improvement = FALSE,
+    best_improvement = NA_real_
+  )
+
+  # Check 1: Low dimensionality
+  if (active_dims <= dim_threshold) {
+    reason <- sprintf("active_dims (%d) <= threshold (%d)", active_dims, dim_threshold)
+    if (verbose) {
+      cat(sprintf("  -> Skipping stage: %s\n", reason))
+    }
+    return(list(skip = TRUE, reason = reason, diagnostics = diagnostics))
+  }
+
+  # Check 2: Previous stage converged
+  if (prev_converged) {
+    reason <- "previous stage converged"
+    if (verbose) {
+      cat(sprintf("  -> Skipping stage: %s\n", reason))
+    }
+    return(list(skip = TRUE, reason = reason, diagnostics = diagnostics))
+  }
+
+  # Check 3: Check improvement in previous stage history
+  if (!is.null(prev_stage_history) && nrow(prev_stage_history) > 0) {
+    diagnostics$checked_improvement <- TRUE
+
+    # Get feasible designs
+    if ("feasible" %in% names(prev_stage_history)) {
+      feasible <- prev_stage_history[prev_stage_history$feasible == TRUE, , drop = FALSE]
+    } else {
+      feasible <- prev_stage_history
+    }
+
+    if (nrow(feasible) >= patience + 1) {
+      # Get objective values (sorted by iteration/order)
+      if ("iter" %in% names(feasible)) {
+        feasible <- feasible[order(feasible$iter), ]
+      }
+
+      obj_col <- if (objective %in% names(feasible)) objective else "objective"
+      if (obj_col %in% names(feasible)) {
+        obj_values <- feasible[[obj_col]]
+        obj_values <- obj_values[!is.na(obj_values)]
+
+        if (length(obj_values) >= patience + 1) {
+          # Check improvement in last 'patience' evaluations
+          n <- length(obj_values)
+          recent <- obj_values[(n - patience + 1):n]
+          earlier <- obj_values[(n - patience):(n - 1)]
+
+          # Best improvement in recent window
+          best_recent <- min(recent)
+          best_earlier <- min(earlier)
+
+          # Compute relative improvement (works for any objective including zero/negative)
+          # Only skip division if best_earlier is exactly zero
+          if (best_earlier != 0) {
+            rel_improvement <- (best_earlier - best_recent) / abs(best_earlier)
+            diagnostics$best_improvement <- rel_improvement
+
+            if (rel_improvement < improvement_threshold) {
+              reason <- sprintf("no improvement in last %d evaluations (%.2e < %.2e threshold)",
+                               patience, rel_improvement, improvement_threshold)
+              if (verbose) {
+                cat(sprintf("  -> Skipping stage: %s\n", reason))
+              }
+              return(list(skip = TRUE, reason = reason, diagnostics = diagnostics))
+            }
+          } else if (best_recent == best_earlier) {
+            # Both are zero - stagnation
+            diagnostics$best_improvement <- 0
+            reason <- sprintf("no improvement in last %d evaluations (stagnant at zero)",
+                             patience)
+            if (verbose) {
+              cat(sprintf("  -> Skipping stage: %s\n", reason))
+            }
+            return(list(skip = TRUE, reason = reason, diagnostics = diagnostics))
+          }
+        }
+      }
+    }
+  }
+
+  if (verbose) {
+    cat("  -> Proceeding with stage (no skip conditions met)\n")
+  }
+
+  list(skip = FALSE, reason = NULL, diagnostics = diagnostics)
+}

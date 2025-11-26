@@ -170,28 +170,65 @@ bo_calibrate <- function(sim_fun,
   if (!is.null(initial_history)) {
     # Validate initial_history
     param_names <- names(bounds)
-    required_cols <- c(param_names, "objective", "fidelity", "feasible")
 
-    missing_cols <- setdiff(required_cols, names(initial_history))
-    if (length(missing_cols) > 0) {
+    # Check for required non-parameter columns
+    required_meta_cols <- c("objective", "fidelity", "feasible")
+    missing_meta <- setdiff(required_meta_cols, names(initial_history))
+    if (length(missing_meta) > 0) {
       stop(sprintf(
         "initial_history missing required columns: %s",
-        paste(missing_cols, collapse = ", ")
+        paste(missing_meta, collapse = ", ")
       ), call. = FALSE)
     }
 
-    # Validate that all rows are within bounds
-    for (param in param_names) {
-      vals <- initial_history[[param]]
-      lower <- bounds[[param]][1]
-      upper <- bounds[[param]][2]
+    # Check for parameter values - either in theta column OR individual columns
+    has_theta_col <- "theta" %in% names(initial_history) && is.list(initial_history$theta)
+    has_param_cols <- all(param_names %in% names(initial_history))
 
-      out_of_bounds <- vals < lower | vals > upper
-      if (any(out_of_bounds, na.rm = TRUE)) {
-        stop(sprintf(
-          "initial_history contains %d rows with %s outside bounds [%g, %g]",
-          sum(out_of_bounds, na.rm = TRUE), param, lower, upper
-        ), call. = FALSE)
+    if (!has_theta_col && !has_param_cols) {
+      stop(sprintf(
+        "initial_history must have either a 'theta' list column or individual parameter columns: %s",
+        paste(param_names, collapse = ", ")
+      ), call. = FALSE)
+    }
+
+    # Extract parameter values for bounds validation
+    # Prefer theta column (native bo_calibrate format), fall back to individual columns
+    if (has_theta_col) {
+      # Extract from theta list column
+      for (param in param_names) {
+        vals <- sapply(initial_history$theta, function(th) {
+          if (is.null(th) || !param %in% names(th)) NA_real_ else th[[param]]
+        })
+        lower <- bounds[[param]][1]
+        upper <- bounds[[param]][2]
+
+        # Skip validation for NA values (will be filtered later)
+        valid_vals <- vals[!is.na(vals)]
+        if (length(valid_vals) > 0) {
+          out_of_bounds <- valid_vals < lower | valid_vals > upper
+          if (any(out_of_bounds, na.rm = TRUE)) {
+            warning(sprintf(
+              "initial_history contains %d rows with %s outside bounds [%g, %g] - these will be filtered",
+              sum(out_of_bounds, na.rm = TRUE), param, lower, upper
+            ))
+          }
+        }
+      }
+    } else {
+      # Validate individual parameter columns
+      for (param in param_names) {
+        vals <- initial_history[[param]]
+        lower <- bounds[[param]][1]
+        upper <- bounds[[param]][2]
+
+        out_of_bounds <- vals < lower | vals > upper
+        if (any(out_of_bounds, na.rm = TRUE)) {
+          warning(sprintf(
+            "initial_history contains %d rows with %s outside bounds [%g, %g] - these will be filtered",
+            sum(out_of_bounds, na.rm = TRUE), param, lower, upper
+          ))
+        }
       }
     }
 

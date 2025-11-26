@@ -7,14 +7,14 @@
 extract_gp_hyperparams(model)
 }
 \arguments{
-\item{model}{fitted GP model (km or hetGP object), or NULL}
+\item{model}{fitted GP model (km, hetGP, homGP, or constant_predictor), or NULL}
 }
 \value{
 numeric vector of hyperparameters, or NULL if extraction fails
 }
 \description{
 Extracts lengthscale parameters from a fitted GP model to use as
-initial values for the next optimization. Works with DiceKriging::km
-and hetGP models.
+initial values for the next optimization. Works with DiceKriging::km,
+hetGP, and homGP models.
 }
 \keyword{internal}
