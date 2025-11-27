@@ -24,13 +24,9 @@ acq_eci <- function(unit_x,
   sd_obj <- obj_pred$sd
 
   metric_names <- names(pred)
-  prob_feas <- purrr::map_dbl(seq_along(mu_obj), function(i) {
-    mean_vec <- purrr::map_dbl(pred, ~ .x$mean[[i]]) |>
-      purrr::set_names(metric_names)
-    sd_vec <- purrr::map_dbl(pred, ~ .x$sd[[i]]) |>
-      purrr::set_names(metric_names)
-    prob_feasibility(mean_vec, sd_vec, constraint_tbl)
-  })
+
+  # PERFORMANCE: Use vectorized batch computation instead of per-candidate loop
+  prob_feas <- prob_feasibility_batch(pred, constraint_tbl)
 
   has_feasible <- is.finite(best_feasible)
 
@@ -116,42 +112,36 @@ compute_expected_violation <- function(pred, constraint_tbl, metric_names) {
   n_candidates <- length(pred[[1]]$mean)
   violations <- numeric(n_candidates)
 
-  for (i in seq_len(n_candidates)) {
-    total_viol <- 0
+  # PERFORMANCE: Loop over constraints (typically 2-4), vectorize across all candidates
+  for (j in seq_len(nrow(constraint_tbl))) {
+    metric <- constraint_tbl$metric[j]
+    direction <- constraint_tbl$direction[j]
+    threshold <- constraint_tbl$threshold[j]
 
-    for (j in seq_len(nrow(constraint_tbl))) {
-      metric <- constraint_tbl$metric[j]
-      direction <- constraint_tbl$direction[j]
-      threshold <- constraint_tbl$threshold[j]
+    if (!metric %in% metric_names) next
 
-      if (!metric %in% metric_names) next
+    # Extract mu and sd vectors for ALL candidates at once
+    mu_vec <- pred[[metric]]$mean
+    sd_vec <- pred[[metric]]$sd + 1e-10  # Add epsilon once
 
-      mu_val <- pred[[metric]]$mean[[i]]
-      sd_val <- pred[[metric]]$sd[[i]]
+    if (direction == "ge") {
+      # Constraint: metric >= threshold
+      # Violation when metric < threshold
+      z <- (threshold - mu_vec) / sd_vec
+      prob_violate <- stats::pnorm(z)
+      # Expected shortfall (expected violation magnitude)
+      expected_shortfall <- sd_vec * stats::dnorm(z) / (prob_violate + 1e-10)
+      violations <- violations + prob_violate * expected_shortfall
 
-      if (direction == "ge") {
-        # Constraint: metric >= threshold
-        # Violation when metric < threshold
-        # E[max(0, threshold - metric)]
-        z <- (threshold - mu_val) / (sd_val + 1e-10)
-        prob_violate <- stats::pnorm(z)
-        # Expected shortfall (expected violation magnitude)
-        expected_shortfall <- (sd_val + 1e-10) * stats::dnorm(z) / (prob_violate + 1e-10)
-        total_viol <- total_viol + prob_violate * expected_shortfall
-
-      } else {  # "le"
-        # Constraint: metric <= threshold
-        # Violation when metric > threshold
-        # E[max(0, metric - threshold)]
-        z <- (mu_val - threshold) / (sd_val + 1e-10)
-        prob_violate <- stats::pnorm(z)
-        # Expected excess (expected violation magnitude)
-        expected_excess <- (sd_val + 1e-10) * stats::dnorm(z) / (prob_violate + 1e-10)
-        total_viol <- total_viol + prob_violate * expected_excess
-      }
+    } else {  # "le"
+      # Constraint: metric <= threshold
+      # Violation when metric > threshold
+      z <- (mu_vec - threshold) / sd_vec
+      prob_violate <- stats::pnorm(z)
+      # Expected excess (expected violation magnitude)
+      expected_excess <- sd_vec * stats::dnorm(z) / (prob_violate + 1e-10)
+      violations <- violations + prob_violate * expected_excess
     }
-
-    violations[i] <- total_viol
   }
 
   violations
@@ -247,21 +237,31 @@ compute_distances <- function(points, reference) {
 estimate_lipschitz <- function(surrogates, objective) {
   model <- surrogates[[objective]]
 
-  # Try to extract lengthscales from DiceKriging model
-  if (inherits(model, "km")) {
-    tryCatch({
+  tryCatch({
+    lengthscales <- NULL
+
+    # Extract lengthscales based on model type
+    if (inherits(model, "km")) {
+      # DiceKriging model (S4 slots)
       lengthscales <- model@covariance@range.val
+    } else if (inherits(model, c("hetGP", "homGP"))) {
+      # hetGP/homGP models (list elements)
+      lengthscales <- model$theta
+    }
+
+    if (!is.null(lengthscales) && length(lengthscales) > 0 &&
+        all(is.finite(lengthscales)) && all(lengthscales > 0)) {
       # Lipschitz constant inversely related to lengthscale
       # Use minimum lengthscale (most sensitive direction)
       L <- 1 / min(lengthscales)
       # Conservative factor: multiply by 2
       return(L * 2)
-    }, error = function(e) {
-      # If extraction fails, use default
-      return(10)
-    })
-  }
+    }
 
-  # Default for other model types
-  10
+    # Default if extraction fails
+    return(10)
+  }, error = function(e) {
+    # If extraction fails, use default
+    return(10)
+  })
 }

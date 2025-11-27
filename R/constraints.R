@@ -62,6 +62,65 @@ prob_feasibility <- function(mean, sd, constraint_tbl) {
 }
 
 
+#' Batch probability of feasibility (vectorized across candidates)
+#'
+#' PERFORMANCE: Computes P(feasible) for all candidates at once instead of
+#' calling prob_feasibility in a loop. This reduces purrr::map overhead from
+#' O(n_candidates × n_constraints) to O(n_constraints).
+#'
+#' @param pred list of predictions from predict_surrogates (contains mean and sd for each metric)
+#' @param constraint_tbl tibble from parse_constraints
+#'
+#' @return numeric vector of feasibility probabilities for each candidate
+#' @keywords internal
+prob_feasibility_batch <- function(pred, constraint_tbl) {
+  n_candidates <- length(pred[[1]]$mean)
+
+  if (nrow(constraint_tbl) == 0L) {
+    return(rep(1, n_candidates))
+  }
+
+  # Initialize cumulative probability (product across constraints)
+  prob_feas <- rep(1, n_candidates)
+
+  # Loop over constraints (typically 2-4), vectorize across all candidates
+  for (j in seq_len(nrow(constraint_tbl))) {
+    metric <- constraint_tbl$metric[j]
+    direction <- constraint_tbl$direction[j]
+    threshold <- constraint_tbl$threshold[j]
+
+    if (!metric %in% names(pred)) {
+      # Missing metric: set probability to 0 for all candidates
+      prob_feas <- rep(0, n_candidates)
+      break
+    }
+
+    mu_vec <- pred[[metric]]$mean
+    sd_vec <- pred[[metric]]$sd
+
+    # Handle invalid sd values (NA, NULL, or <= 0)
+    invalid <- is.na(sd_vec) | sd_vec <= 0
+    sd_vec[invalid] <- 1e-10  # Small positive to avoid division by zero
+
+    if (direction == "ge") {
+      # P(metric >= threshold) = P(Z >= (threshold - mu) / sd) = Phi((mu - threshold) / sd)
+      constraint_prob <- stats::pnorm((mu_vec - threshold) / sd_vec)
+    } else {
+      # P(metric <= threshold) = P(Z <= (threshold - mu) / sd) = Phi((threshold - mu) / sd)
+      constraint_prob <- stats::pnorm((threshold - mu_vec) / sd_vec)
+    }
+
+    # Set invalid entries to 0
+    constraint_prob[invalid] <- 0
+
+    # Multiply into cumulative (assuming independence)
+    prob_feas <- prob_feas * constraint_prob
+  }
+
+  prob_feas
+}
+
+
 #' Filter History for New Constraints
 #'
 #' When adding constraints in later stages, filters history to only include

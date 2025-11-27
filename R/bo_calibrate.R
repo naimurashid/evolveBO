@@ -192,10 +192,13 @@ bo_calibrate <- function(sim_fun,
       ), call. = FALSE)
     }
 
-    # Extract parameter values for bounds validation
-    # Prefer theta column (native bo_calibrate format), fall back to individual columns
+    # Filter rows to only those within bounds
+    # Build a mask: TRUE if row is within bounds for ALL parameters
+    n_original <- nrow(initial_history)
+    in_bounds_mask <- rep(TRUE, n_original)
+
     if (has_theta_col) {
-      # Extract from theta list column
+      # Extract from theta list column and check bounds
       for (param in param_names) {
         vals <- sapply(initial_history$theta, function(th) {
           if (is.null(th) || !param %in% names(th)) NA_real_ else th[[param]]
@@ -203,36 +206,38 @@ bo_calibrate <- function(sim_fun,
         lower <- bounds[[param]][1]
         upper <- bounds[[param]][2]
 
-        # Skip validation for NA values (will be filtered later)
-        valid_vals <- vals[!is.na(vals)]
-        if (length(valid_vals) > 0) {
-          out_of_bounds <- valid_vals < lower | valid_vals > upper
-          if (any(out_of_bounds, na.rm = TRUE)) {
-            warning(sprintf(
-              "initial_history contains %d rows with %s outside bounds [%g, %g] - these will be filtered",
-              sum(out_of_bounds, na.rm = TRUE), param, lower, upper
-            ))
-          }
-        }
+        # Row is out of bounds if value exists and is outside [lower, upper]
+        # NA values are kept (they'll be handled elsewhere)
+        param_in_bounds <- is.na(vals) | (vals >= lower & vals <= upper)
+        in_bounds_mask <- in_bounds_mask & param_in_bounds
       }
     } else {
-      # Validate individual parameter columns
+      # Check individual parameter columns
       for (param in param_names) {
         vals <- initial_history[[param]]
         lower <- bounds[[param]][1]
         upper <- bounds[[param]][2]
 
-        out_of_bounds <- vals < lower | vals > upper
-        if (any(out_of_bounds, na.rm = TRUE)) {
-          warning(sprintf(
-            "initial_history contains %d rows with %s outside bounds [%g, %g] - these will be filtered",
-            sum(out_of_bounds, na.rm = TRUE), param, lower, upper
-          ))
-        }
+        param_in_bounds <- is.na(vals) | (vals >= lower & vals <= upper)
+        in_bounds_mask <- in_bounds_mask & param_in_bounds
       }
     }
 
-    # Use provided history
+    # Apply filter
+    n_filtered <- sum(!in_bounds_mask)
+    if (n_filtered > 0) {
+      warning(sprintf(
+        "initial_history: filtered %d of %d rows with parameters outside bounds",
+        n_filtered, n_original
+      ))
+      initial_history <- initial_history[in_bounds_mask, , drop = FALSE]
+    }
+
+    if (nrow(initial_history) == 0) {
+      stop("initial_history has no rows within bounds - cannot warm-start", call. = FALSE)
+    }
+
+    # Use filtered history
     history <- initial_history
     n_init_actual <- nrow(initial_history)
 

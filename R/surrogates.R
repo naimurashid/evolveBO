@@ -90,8 +90,32 @@ fit_hetgp_surrogate <- function(history, metric, id_groups, param_names, covtype
     })
   }
 
+  # Filter out locations where ALL Z values are NA
+  valid_locs <- sapply(Z_list, function(z) !all(is.na(z)))
+  n_invalid <- sum(!valid_locs)
+  if (n_invalid > 0) {
+    message(sprintf("  [hetGP] Filtered %d/%d locations with all-NA values for metric '%s'",
+                    n_invalid, length(Z_list), metric))
+    X_list <- X_list[valid_locs]
+    Z_list <- Z_list[valid_locs]
+  }
+
+  # Check if we have enough observations
+  if (length(X_list) < 2) {
+    mean_val <- if (length(Z_list) == 1) mean(Z_list[[1]], na.rm = TRUE) else NA_real_
+    message(sprintf("  [hetGP] Insufficient observations (%d) for GP - using constant predictor for '%s'",
+                    length(X_list), metric))
+    return(structure(
+      list(mean = mean_val, metric = metric),
+      class = "constant_predictor"
+    ))
+  }
+
   X <- do.call(rbind, X_list)
   colnames(X) <- param_names
+
+  # Filter NA values within each location's Z values (keep only non-NA)
+  Z_list <- lapply(Z_list, function(z) z[!is.na(z)])
 
   # hetGP expects Z as vector with mult indicating replication counts
   Z_vec <- unlist(Z_list)
@@ -195,6 +219,27 @@ fit_dicekriging_surrogate <- function(history, metric, id_groups, param_names,
       noise = if (all(is.na(noise[idx]))) NA_real_ else mean(noise[idx], na.rm = TRUE)
     )
   })
+
+  # Filter out rows with NA/NaN values (can happen when all observations at a theta are NA)
+  valid_rows <- !is.na(aggr$value) & !is.nan(aggr$value)
+  n_invalid <- sum(!valid_rows)
+  if (n_invalid > 0) {
+    message(sprintf("  [surrogate] Filtered %d/%d rows with NA/NaN values for metric '%s'",
+                    n_invalid, nrow(aggr), metric))
+    aggr <- aggr[valid_rows, , drop = FALSE]
+  }
+
+  # Check if we have enough observations to fit a GP
+  if (nrow(aggr) < 2) {
+    # Return a constant predictor if insufficient data
+    mean_val <- if (nrow(aggr) == 1) aggr$value[1] else NA_real_
+    message(sprintf("  [surrogate] Insufficient observations (%d) for GP - using constant predictor for '%s'",
+                    nrow(aggr), metric))
+    return(structure(
+      list(mean = mean_val, metric = metric),
+      class = "constant_predictor"
+    ))
+  }
 
   X_unique <- aggr$unit_x |>
     purrr::map(~ {

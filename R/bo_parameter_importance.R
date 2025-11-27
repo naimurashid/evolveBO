@@ -59,9 +59,14 @@ extract_lengthscales <- function(surrogates, metric = NULL) {
   # Add parameter names if available
   if (!is.null(names(lengthscales))) {
     return(lengthscales)
-  } else if (!is.null(model@d)) {
+  } else if (inherits(model, "km") && !is.null(model@d)) {
     # DiceKriging uses @d for number of dimensions
     param_names <- paste0("x", seq_len(model@d))
+    names(lengthscales) <- param_names
+    return(lengthscales)
+  } else if (inherits(model, c("hetGP", "homGP")) && !is.null(colnames(model$X0))) {
+    # hetGP/homGP use $X0 for design matrix
+    param_names <- colnames(model$X0)
     names(lengthscales) <- param_names
     return(lengthscales)
   } else {
