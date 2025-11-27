@@ -288,9 +288,9 @@ Typical improvements with variance estimation:
 | Memory per evaluation | 320 KB | 64 bytes | 5,000× less |
 | Computation overhead | 0% | 2% | Negligible |
 
-## Phase Improvements
+## Version 0.3.0 Improvements
 
-Version 0.3.0 includes three major improvement phases documented in detail:
+Version 0.3.0 includes three major improvement phases:
 
 ### Phase 1: Acquisition Function & Batch Diversity
 - **Numerical stability**: Epsilon guards prevent division by zero
@@ -298,23 +298,17 @@ Version 0.3.0 includes three major improvement phases documented in detail:
 - **Batch diversity**: Local penalization (González et al., AISTATS 2016)
 - **Impact**: 10-20% fewer evaluations, robust behavior
 
-📄 [See PHASE1_IMPLEMENTATION_SUMMARY.md](PHASE1_IMPLEMENTATION_SUMMARY.md) for details
-
 ### Phase 2: Multi-Fidelity Strategy Overhaul
 - **Adaptive fidelity**: Cost-aware value-per-cost optimization
 - **Three methods**: adaptive (default), staged, threshold
 - **Custom costs**: Non-linear cost relationships
 - **Impact**: 15-25% better budget utilization
 
-📄 [See PHASE2_IMPLEMENTATION_SUMMARY.md](PHASE2_IMPLEMENTATION_SUMMARY.md) for details
-
 ### Phase 3: Performance Optimizations
 - **Warm-start**: GP hyperparameters from previous iteration
 - **Adaptive pool**: Scales with dimension (500 × d)
 - **Early stopping**: Patience-based + acquisition-based
 - **Impact**: 30-60% faster wall-clock time
-
-📄 [See PHASE3_IMPLEMENTATION_SUMMARY.md](PHASE3_IMPLEMENTATION_SUMMARY.md) for details
 
 ### Combined Impact
 
@@ -324,8 +318,6 @@ Version 0.3.0 includes three major improvement phases documented in detail:
 - 30-60% reduction in wall-clock time
 - Better solution quality
 - More robust constraint handling
-
-📄 [See ALL_PHASES_COMPLETE.md](ALL_PHASES_COMPLETE.md) for comprehensive analysis
 
 ## Citation
 
@@ -356,24 +348,29 @@ MIT License - see [LICENSE](LICENSE) file for details.
 - **Affiliation**: Department of Biostatistics, UNC Chapel Hill; Lineberger Comprehensive Cancer Center
 - **Issues**: [GitHub Issues](https://github.com/naimurashid/evolveBO/issues)
 
-## Additional Resources
+## Package Structure
 
-### Development Documentation
-- **CLAUDE.md**: Development guide for contributors
-- **IMPLEMENTATION_PLAN.md**: Complete roadmap for all improvements
+```
+evolveBO/
+├── R/
+│   ├── bo_calibrate.R       # Main optimization loop
+│   ├── surrogates.R         # GP surrogate model fitting
+│   ├── acquisition.R        # ECI acquisition function
+│   ├── fidelity.R           # Multi-fidelity selection
+│   ├── sensitivity.R        # Sobol & gradient analysis
+│   └── variance.R           # Welford's algorithm
+├── inst/
+│   ├── benchmarks/          # Performance comparisons
+│   └── examples/            # Example simulators
+└── vignettes/
+    ├── evolveBO-introduction.Rmd
+    └── variance-estimation.Rmd
+```
 
-### Phase Implementation Summaries (v0.3.0)
-- **PHASE1_IMPLEMENTATION_SUMMARY.md**: Acquisition & batch diversity
-- **PHASE2_IMPLEMENTATION_SUMMARY.md**: Multi-fidelity strategy overhaul
-- **PHASE3_IMPLEMENTATION_SUMMARY.md**: Performance optimizations
-- **ALL_PHASES_COMPLETE.md**: Comprehensive summary of all improvements
-- **PACKAGE_REVIEW_ANALYSIS.md**: Literature review & recommendations
+## Related Packages
 
-### Variance Estimation Documentation
-- **VARIANCE_ESTIMATOR_EXPLANATION.md**: Why variance estimation matters
-- **MEMORY_ANALYSIS.md**: Memory usage analysis
-- **NUGGET_IMPACT_ANALYSIS.md**: Performance without variance
-- **WELFORD_IMPLEMENTATION_SUMMARY.md**: Implementation details
+- **evolveTrial**: Bayesian adaptive trial simulation (used as simulator)
+- **adaptive-trial-bo-paper**: Research manuscript and case studies
 
 ## Quick Tips
 
