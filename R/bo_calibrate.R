@@ -46,6 +46,23 @@
 #'   All rows must be within the specified \code{bounds}. This enables multi-stage
 #'   warm-starting where later stages reuse evaluations from previous stages with
 #'   narrowed bounds. Default: NULL (use random initialization).
+#' @param init_stopping optional list controlling GP-based initialization early
+#'   stopping. When enabled, a Gaussian process is fit periodically during
+#'   initialization to assess whether the design space is sufficiently explored.
+#'   If metrics stabilize (e.g., prediction variance stops changing), initialization
+#'   terminates early, saving budget for the BO loop. Create via
+#'   \code{\link{init_stopping_config}()}. Key options:
+#'   \describe{
+#'     \item{\code{enabled}}{Logical: enable init stopping (default: TRUE)}
+#'     \item{\code{min_init}}{Minimum points before checking (default: 20)}
+#'     \item{\code{check_every}}{Check every k points (default: 20)}
+#'     \item{\code{metrics}}{Metrics to track: "variance", "loo", "hyperparams",
+#'       "loglik" (default: "variance")}
+#'     \item{\code{threshold}}{Relative change threshold for convergence (default: 0.10)}
+#'     \item{\code{window}}{Consecutive stable checkpoints required (default: 2)}
+#'     \item{\code{verbose}}{Print diagnostic messages (default: FALSE)}
+#'   }
+#'   Default: NULL (no early stopping, use full n_init).
 #' @param fidelity_levels named numeric vector giving the number of simulator
 #'   replications associated with each fidelity level. Default: c(low=2000, med=4000,
 #'   high=10000), increased from (200, 1000, 10000) for reduced Monte Carlo variance.
@@ -107,6 +124,7 @@ bo_calibrate <- function(sim_fun,
                          budget = 300,
                          seed = 2025,
                          initial_history = NULL,
+                         init_stopping = NULL,
                          fidelity_levels = c(low = 2000, med = 4000, high = 10000),
                          fidelity_method = c("adaptive", "staged", "threshold", "hybrid_staged"),
                          fidelity_costs = NULL,
@@ -257,6 +275,19 @@ bo_calibrate <- function(sim_fun,
 
     eval_counter <- 0L
 
+    # Initialize GP-based stopping if enabled
+    init_checkpoints <- list()
+    init_stopped_early <- FALSE
+    use_init_stopping <- !is.null(init_stopping) &&
+                         isTRUE(init_stopping$enabled) &&
+                         is.null(initial_history)
+
+    if (use_init_stopping && progress) {
+      message(sprintf("  Init stopping enabled: check every %d points, min %d",
+                      init_stopping$check_every %||% 20,
+                      init_stopping$min_init %||% 20))
+    }
+
     for (theta in initial_design) {
       theta <- coerce_theta_types(theta, integer_params)
       eval_counter <- eval_counter + 1L
@@ -275,6 +306,43 @@ bo_calibrate <- function(sim_fun,
         progress = progress,
         ...
       )
+
+      # Check GP-based initialization stopping
+      if (use_init_stopping &&
+          eval_counter >= (init_stopping$min_init %||% 20) &&
+          eval_counter %% (init_stopping$check_every %||% 20) == 0) {
+
+        # Extract design matrix and objective values from history
+        # theta is stored as a list column - unpack to matrix
+        param_names <- names(bounds)
+        X_init <- do.call(rbind, lapply(history$theta, function(th) {
+          unlist(th[param_names])
+        }))
+        colnames(X_init) <- param_names
+        y_init <- history[[objective]]
+
+        check_result <- check_init_sufficiency(
+          X = X_init,
+          y = y_init,
+          checkpoints = init_checkpoints,
+          metrics = init_stopping$metrics %||% c("variance"),
+          threshold = init_stopping$threshold %||% 0.10,
+          window = init_stopping$window %||% 2,
+          verbose = init_stopping$verbose %||% FALSE
+        )
+
+        init_checkpoints <- c(init_checkpoints, list(check_result$metrics))
+
+        if (check_result$converged) {
+          if (progress) {
+            message(sprintf("  [Init stopping] %s at %d/%d points (saved %d evals)",
+                            check_result$reason, eval_counter, n_init,
+                            n_init - eval_counter))
+          }
+          init_stopped_early <- TRUE
+          break
+        }
+      }
     }
   }
 
@@ -320,9 +388,24 @@ bo_calibrate <- function(sim_fun,
     }
 
     # Fit surrogates with warm-start from previous iteration
-    surrogates <- fit_surrogates(history, objective, constraint_tbl,
-                                  covtype = covtype,
-                                  prev_surrogates = prev_surrogates)
+    # Include tryCatch to handle fitting failures gracefully
+    surrogates <- tryCatch({
+      fit_surrogates(history, objective, constraint_tbl,
+                     covtype = covtype,
+                     prev_surrogates = prev_surrogates)
+    }, error = function(e) {
+      warning(sprintf("Surrogate fitting failed at iteration %d: %s. Retrying without warm-start.",
+                      iter_counter, e$message))
+      # Retry without warm-start
+      tryCatch({
+        fit_surrogates(history, objective, constraint_tbl,
+                       covtype = covtype,
+                       prev_surrogates = NULL)
+      }, error = function(e2) {
+        stop(sprintf("Surrogate fitting failed even without warm-start: %s", e2$message),
+             call. = FALSE)
+      })
+    })
 
     best_feasible_value <- best_feasible_objective(history, objective)
 
@@ -660,38 +743,90 @@ record_evaluation <- function(history,
 
   # Unpack metrics into individual columns for easier access
   # This allows adaptive bounds functions to directly access constraint metrics
+  # Ensure all metric values are numeric to avoid bind_rows type conflicts
   metrics_df <- if (length(metrics) > 0) {
-    as.data.frame(as.list(metrics), stringsAsFactors = FALSE)
+    metrics_list <- lapply(as.list(metrics), function(x) {
+      if (is.null(x) || length(x) == 0) NA_real_ else as.numeric(x)
+    })
+    as.data.frame(metrics_list, stringsAsFactors = FALSE)
   } else {
     data.frame()
   }
 
   # Create base row
   base_row <- tibble::tibble(
-    iter = iter,
-    eval_id = eval_id,
+    iter = as.integer(iter),
+    eval_id = as.integer(eval_id),
     theta = list(theta),
     unit_x = list(unit_theta),
-    theta_id = theta_id,
-    fidelity = fidelity,
-    n_rep = n_rep,
+    theta_id = as.character(theta_id),
+    fidelity = as.character(fidelity),
+    n_rep = as.integer(n_rep),
     metrics = list(metrics),
     variance = list(variance),
-    objective = objective_value,
-    feasible = feasible,
-    prob_feas = prob_feas_val,
-    cv_estimate = cv_val,
-    acq_score = acq_val
+    objective = as.numeric(objective_value),
+    feasible = as.logical(feasible),
+    prob_feas = as.numeric(prob_feas_val),
+    cv_estimate = as.numeric(cv_val),
+    acq_score = as.numeric(acq_val)
   )
+
+  # Unpack theta into individual parameter columns
+  # This ensures new rows have the same columns as initial history (which has
+  # unpacked eff, fut, ev, etc.) and prevents NAs when bind_rows combines them
+  theta_df <- if (length(theta) > 0) {
+    theta_list <- lapply(as.list(theta), function(x) {
+      if (is.null(x) || length(x) == 0) NA_real_ else as.numeric(x)
+    })
+    as.data.frame(theta_list, stringsAsFactors = FALSE)
+  } else {
+    data.frame()
+  }
+
+  # Add unpacked theta columns to base_row (before metrics to avoid conflicts)
+  if (ncol(theta_df) > 0) {
+    # Check for column name conflicts with base_row
+    conflict_cols <- intersect(names(base_row), names(theta_df))
+    if (length(conflict_cols) > 0) {
+      # These shouldn't conflict, but if they do, don't overwrite base columns
+      theta_df <- theta_df[, !names(theta_df) %in% conflict_cols, drop = FALSE]
+    }
+    if (ncol(theta_df) > 0) {
+      base_row <- dplyr::bind_cols(base_row, theta_df)
+    }
+  }
 
   # Combine with unpacked metrics
   if (ncol(metrics_df) > 0) {
+    # Check for column name conflicts and rename if needed
+    conflict_cols <- intersect(names(base_row), names(metrics_df))
+    if (length(conflict_cols) > 0) {
+      names(metrics_df)[names(metrics_df) %in% conflict_cols] <-
+        paste0("metric_", names(metrics_df)[names(metrics_df) %in% conflict_cols])
+    }
     new_row <- dplyr::bind_cols(base_row, metrics_df)
   } else {
     new_row <- base_row
   }
 
-  dplyr::bind_rows(history, new_row)
+  # Ensure type consistency before binding
+  tryCatch({
+    dplyr::bind_rows(history, new_row)
+  }, error = function(e) {
+    # If bind_rows fails, try to diagnose and fix
+    warning(sprintf("bind_rows failed at eval_id %d: %s. Attempting type coercion.",
+                    eval_id, e$message))
+    # Coerce all columns in history to match new_row types
+    for (col in names(new_row)) {
+      if (col %in% names(history) && !inherits(new_row[[col]], "list")) {
+        history[[col]] <- tryCatch(
+          as(history[[col]], class(new_row[[col]])[1]),
+          error = function(e2) history[[col]]
+        )
+      }
+    }
+    dplyr::bind_rows(history, new_row)
+  })
 }
 
 #' @keywords internal
@@ -710,11 +845,21 @@ invoke_simulator <- function(sim_fun, theta, fidelity, n_rep, seed, ...) {
   } else {
     metrics <- res
   }
-  metrics <- metrics |> as.list() |> purrr::imap_dbl(function(value, name) as.numeric(value))
+  # Use base R instead of purrr::imap_dbl to avoid "In index: X" errors
+  metrics_list <- as.list(metrics)
+  metrics <- vapply(metrics_list, function(x) {
+    tryCatch(as.numeric(x), error = function(e) NA_real_)
+  }, FUN.VALUE = numeric(1))
+  names(metrics) <- names(metrics_list)
+
   if (is.null(variance)) {
     variance <- default_variance_estimator(metrics, n_rep)
   } else {
-    variance <- variance |> as.list() |> purrr::imap_dbl(function(value, name) as.numeric(value))
+    variance_list <- as.list(variance)
+    variance <- vapply(variance_list, function(x) {
+      tryCatch(as.numeric(x), error = function(e) NA_real_)
+    }, FUN.VALUE = numeric(1))
+    names(variance) <- names(variance_list)
   }
   if (is.null(rep_attr) || is.na(rep_attr)) {
     rep_attr <- n_rep
@@ -750,9 +895,14 @@ invoke_simulator <- function(sim_fun, theta, fidelity, n_rep, seed, ...) {
 #' @keywords internal
 default_variance_estimator <- function(metrics, n_rep) {
   if (is.null(n_rep) || is.na(n_rep) || n_rep <= 0) {
-    return(rep(NA_real_, length(metrics)) |> purrr::set_names(names(metrics)))
+    result <- rep(NA_real_, length(metrics))
+    names(result) <- names(metrics)
+    return(result)
   }
-  purrr::imap_dbl(metrics, function(value, name) {
+  # Use base R vapply instead of purrr::imap_dbl to avoid "In index: X" errors
+  metric_names <- names(metrics)
+  result <- vapply(seq_along(metrics), function(i) {
+    value <- metrics[i]
     # Use binomial variance for proportion-type metrics (values in [0,1])
     if (!is.na(value) && value >= 0 && value <= 1) {
       max(value * (1 - value) / n_rep, 1e-6)
@@ -761,7 +911,9 @@ default_variance_estimator <- function(metrics, n_rep) {
       # The GP fitting will use a small nugget for these cases
       NA_real_
     }
-  })
+  }, FUN.VALUE = numeric(1))
+  names(result) <- metric_names
+  result
 }
 
 #' @keywords internal
@@ -769,18 +921,21 @@ validate_fidelity_levels <- function(fidelity_levels) {
   if (is.null(names(fidelity_levels))) {
     stop("`fidelity_levels` must be a named numeric vector.", call. = FALSE)
   }
-  purrr::iwalk(fidelity_levels, function(value, name) {
+  # Use base R for loop instead of purrr::iwalk
+  for (i in seq_along(fidelity_levels)) {
+    value <- fidelity_levels[i]
     if (!is.finite(value) || value <= 0) {
       stop("Fidelity replication counts must be positive.", call. = FALSE)
     }
-  })
+  }
   fidelity_levels
 }
 
 #' @keywords internal
 lhs_candidate_pool <- function(n, bounds) {
   lhs <- lhs::randomLHS(n, length(bounds))
-  purrr::map(seq_len(n), function(i) {
+  # Use base R lapply instead of purrr::map
+  lapply(seq_len(n), function(i) {
     values <- lhs[i, , drop = TRUE]
     names(values) <- names(bounds)
     values
@@ -810,9 +965,16 @@ best_feasible_index <- function(history, objective) {
 #' @keywords internal
 estimate_candidate_feasibility <- function(surrogates, unit_x, constraint_tbl) {
   pred <- predict_surrogates(surrogates, unit_x)
-  names <- names(pred)
-  mean_vec <- purrr::map_dbl(pred, ~ .x$mean[[1]]) |> purrr::set_names(names)
-  sd_vec <- purrr::map_dbl(pred, ~ .x$sd[[1]]) |> purrr::set_names(names)
+  pred_names <- names(pred)
+  # Use base R vapply instead of purrr::map_dbl to avoid "In index: X" errors
+  mean_vec <- vapply(pred, function(p) {
+    if (is.null(p$mean) || length(p$mean) == 0) NA_real_ else p$mean[[1]]
+  }, FUN.VALUE = numeric(1))
+  names(mean_vec) <- pred_names
+  sd_vec <- vapply(pred, function(p) {
+    if (is.null(p$sd) || length(p$sd) == 0) NA_real_ else p$sd[[1]]
+  }, FUN.VALUE = numeric(1))
+  names(sd_vec) <- pred_names
   prob_feasibility(mean_vec, sd_vec, constraint_tbl)
 }
 
@@ -1282,18 +1444,46 @@ select_fidelity_adaptive <- function(prob_feasible,
 #' @keywords internal
 generate_diagnostics <- function(surrogates, history, objective, n_draws = 1000) {
   unit_best <- history$unit_x[[best_feasible_index(history, objective)]]
-  draws <- purrr::imap(surrogates, function(model, metric) {
-    newdata <- matrix(unname(unlist(unit_best)), nrow = 1)
-    colnames(newdata) <- names(unit_best)
-    pred <- DiceKriging::predict.km(model,
-                                    newdata = newdata,
-                                    type = "UK",
-                                    se.compute = TRUE,
-                                    cov.compute = TRUE)
-    mean <- as.numeric(pred$mean)
-    sd <- max(as.numeric(pred$sd), 1e-8)
-    stats::rnorm(n_draws, mean, sd)
+  newdata <- matrix(unname(unlist(unit_best)), nrow = 1)
+  colnames(newdata) <- names(unit_best)
+
+  # Use base R lapply instead of purrr::imap to avoid "In index: X" errors
+  surrogate_names <- names(surrogates)
+  draws <- lapply(seq_along(surrogates), function(i) {
+    model <- surrogates[[i]]
+    metric <- surrogate_names[i]
+
+    tryCatch({
+      if (inherits(model, "constant_predictor")) {
+        # Constant predictor - return draws from approximate distribution
+        mean_val <- if (!is.null(model$mean_value)) model$mean_value else 0
+        stats::rnorm(n_draws, mean_val, 1.0)
+      } else if (inherits(model, c("hetGP", "homGP"))) {
+        # hetGP/homGP models
+        pred <- predict(x = newdata, object = model)
+        mean_val <- as.numeric(pred$mean)
+        sd_val <- max(as.numeric(sqrt(pred$sd2)), 1e-8)
+        stats::rnorm(n_draws, mean_val, sd_val)
+      } else {
+        # DiceKriging km model
+        pred <- DiceKriging::predict.km(model,
+                                        newdata = newdata,
+                                        type = "UK",
+                                        se.compute = TRUE,
+                                        cov.compute = TRUE)
+        mean_val <- as.numeric(pred$mean)
+        sd_val <- max(as.numeric(pred$sd), 1e-8)
+        stats::rnorm(n_draws, mean_val, sd_val)
+      }
+    }, error = function(e) {
+      warning(sprintf("[generate_diagnostics] Error generating draws for metric '%s': %s",
+                      metric, e$message), call. = FALSE)
+      # Return uniform draws as fallback
+      stats::runif(n_draws, 0, 1)
+    })
   })
+  names(draws) <- surrogate_names
+
   list(
     posterior_draws = draws,
     history_summary = history |> dplyr::select(eval_id, objective, feasible)

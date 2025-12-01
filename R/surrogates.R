@@ -28,9 +28,22 @@ fit_surrogates <- function(history,
   }
 
   metrics_needed <- unique(c(objective, constraint_tbl$metric))
-  param_names <- names(history$unit_x[[1]])
-  if (is.null(param_names)) {
-    param_names <- names(history$theta[[1]])
+
+  # Robustly extract param_names from history
+  param_names <- NULL
+  if (nrow(history) > 0) {
+    # Try unit_x first
+    if ("unit_x" %in% names(history) && length(history$unit_x) > 0 && !is.null(history$unit_x[[1]])) {
+      param_names <- names(history$unit_x[[1]])
+    }
+    # Fall back to theta
+    if (is.null(param_names) && "theta" %in% names(history) && length(history$theta) > 0 && !is.null(history$theta[[1]])) {
+      param_names <- names(history$theta[[1]])
+    }
+  }
+
+  if (is.null(param_names) || length(param_names) == 0) {
+    stop("Cannot determine parameter names from history. Check that unit_x or theta columns exist and have named elements.", call. = FALSE)
   }
 
   theta_ids <- history$theta_id
@@ -40,32 +53,64 @@ fit_surrogates <- function(history,
   has_hetgp <- requireNamespace("hetGP", quietly = TRUE)
   use_hetgp <- use_hetgp && has_hetgp
 
-  surrogates <- purrr::map(metrics_needed, function(metric) {
-    values <- purrr::map_dbl(history$metrics, ~ as.numeric(.x[[metric]]))
-    noise <- purrr::map_dbl(history$variance, function(var_list) {
-      if (is.null(var_list)) return(NA_real_)
-      as.numeric(var_list[[metric]])
+  # Use lapply instead of purrr::map to avoid purrr's error wrapping
+  # which can cause confusing "In index: X" error messages
+  surrogates <- lapply(metrics_needed, function(metric) {
+    tryCatch({
+      # Extract values with robust error handling
+      values <- sapply(seq_along(history$metrics), function(i) {
+        tryCatch({
+          m <- history$metrics[[i]]
+          if (is.null(m) || !metric %in% names(m)) return(NA_real_)
+          as.numeric(m[[metric]])
+        }, error = function(e) NA_real_)
+      })
+
+      noise <- sapply(seq_along(history$variance), function(i) {
+        tryCatch({
+          var_list <- history$variance[[i]]
+          if (is.null(var_list) || !metric %in% names(var_list)) return(NA_real_)
+          as.numeric(var_list[[metric]])
+        }, error = function(e) NA_real_)
+      })
+
+      # Check if we have replicated observations (multiple evals at same theta)
+      has_replicates <- any(sapply(id_groups, length) > 1)
+      has_variance <- !all(is.na(noise))
+
+      # Extract previous model for warm-starting (if available)
+      prev_model <- if (!is.null(prev_surrogates) && metric %in% names(prev_surrogates)) {
+        prev_surrogates[[metric]]
+      } else {
+        NULL
+      }
+
+      if (use_hetgp && has_replicates && has_variance) {
+        # Use hetGP with replicated observations
+        fit_hetgp_surrogate(history, metric, id_groups, param_names, covtype, prev_model)
+      } else {
+        # Fall back to DiceKriging with aggregated observations
+        fit_dicekriging_surrogate(history, metric, id_groups, param_names,
+                                  covtype, noise, values, prev_model)
+      }
+    }, error = function(e) {
+      # On any error, return constant predictor instead of failing
+      warning(sprintf("[fit_surrogates] Error fitting surrogate for metric '%s': %s. Using constant predictor.",
+                      metric, e$message), call. = FALSE)
+      # Compute fallback mean from available values
+      fallback_mean <- tryCatch({
+        vals <- sapply(history$metrics, function(m) {
+          if (is.null(m) || !metric %in% names(m)) NA_real_ else as.numeric(m[[metric]])
+        })
+        mean(vals, na.rm = TRUE)
+      }, error = function(e2) NA_real_)
+
+      structure(
+        list(mean_value = if (is.finite(fallback_mean)) fallback_mean else 0,
+             metric = metric),
+        class = "constant_predictor"
+      )
     })
-
-    # Check if we have replicated observations (multiple evals at same theta)
-    has_replicates <- any(sapply(id_groups, length) > 1)
-    has_variance <- !all(is.na(noise))
-
-    # Extract previous model for warm-starting (if available)
-    prev_model <- if (!is.null(prev_surrogates) && metric %in% names(prev_surrogates)) {
-      prev_surrogates[[metric]]
-    } else {
-      NULL
-    }
-
-    if (use_hetgp && has_replicates && has_variance) {
-      # Use hetGP with replicated observations
-      fit_hetgp_surrogate(history, metric, id_groups, param_names, covtype, prev_model)
-    } else {
-      # Fall back to DiceKriging with aggregated observations
-      fit_dicekriging_surrogate(history, metric, id_groups, param_names,
-                                covtype, noise, values, prev_model)
-    }
   })
 
   names(surrogates) <- metrics_needed
@@ -209,16 +254,37 @@ fit_hetgp_surrogate <- function(history, metric, id_groups, param_names, covtype
 #' @keywords internal
 fit_dicekriging_surrogate <- function(history, metric, id_groups, param_names,
                                       covtype, noise, values, prev_model = NULL) {
-  # Aggregate by theta_id
-  aggr <- purrr::imap_dfr(id_groups, function(idx, id) {
-    unit_theta <- history$unit_x[[idx[1]]]
-    tibble::tibble(
-      theta_id = id,
-      unit_x = list(unit_theta),
-      value = mean(values[idx], na.rm = TRUE),
-      noise = if (all(is.na(noise[idx]))) NA_real_ else mean(noise[idx], na.rm = TRUE)
-    )
+  # Aggregate by theta_id - with robust error handling
+  # Use base R lapply instead of purrr::imap to avoid "In index: X" errors
+  group_names <- names(id_groups)
+  aggr_list <- lapply(seq_along(id_groups), function(i) {
+    idx <- id_groups[[i]]
+    id <- group_names[i]
+    tryCatch({
+      unit_theta <- history$unit_x[[idx[1]]]
+      # Ensure unit_theta is a proper numeric vector
+      if (is.null(unit_theta) || length(unit_theta) == 0) {
+        warning(sprintf("Empty unit_theta at theta_id '%s' (idx=%d)", id, idx[1]))
+        return(NULL)
+      }
+      tibble::tibble(
+        theta_id = id,
+        unit_x = list(as.numeric(unit_theta)),
+        value = mean(values[idx], na.rm = TRUE),
+        noise = if (all(is.na(noise[idx]))) NA_real_ else mean(noise[idx], na.rm = TRUE)
+      )
+    }, error = function(e) {
+      warning(sprintf("Error aggregating theta_id '%s': %s", id, e$message))
+      return(NULL)
+    })
   })
+
+  # Filter out NULLs and bind
+  aggr_list <- aggr_list[!sapply(aggr_list, is.null)]
+  if (length(aggr_list) == 0) {
+    stop(sprintf("No valid observations to fit surrogate for metric '%s'", metric), call. = FALSE)
+  }
+  aggr <- dplyr::bind_rows(aggr_list)
 
   # Filter out rows with NA/NaN values (can happen when all observations at a theta are NA)
   valid_rows <- !is.na(aggr$value) & !is.nan(aggr$value)
@@ -241,16 +307,16 @@ fit_dicekriging_surrogate <- function(history, metric, id_groups, param_names,
     ))
   }
 
-  X_unique <- aggr$unit_x |>
-    purrr::map(~ {
-      vec <- as.numeric(.x)
-      if (length(vec) != length(param_names)) {
-        stop("Surrogate design dimension mismatch.", call. = FALSE)
-      }
-      vec
-    }) |>
-    do.call(what = rbind) |>
-    as.matrix()
+  # Use base R lapply instead of purrr::map
+  X_unique <- lapply(aggr$unit_x, function(x) {
+    vec <- as.numeric(x)
+    if (length(vec) != length(param_names)) {
+      stop("Surrogate design dimension mismatch.", call. = FALSE)
+    }
+    vec
+  })
+  X_unique <- do.call(rbind, X_unique)
+  X_unique <- as.matrix(X_unique)
   colnames(X_unique) <- param_names
 
   noise_vec <- aggr$noise
@@ -378,39 +444,78 @@ predict_surrogates <- function(surrogates, unit_x) {
     param_names <- names(unit_x[[1]])
   }
 
-  design <- purrr::map_dfr(unit_x, function(point) {
-    vec <- unlist(point)
-    if (is.null(names(vec))) {
-      names(vec) <- param_names
-    }
-    tibble::as_tibble_row(vec[param_names])
+  # Build design matrix with robust error handling
+  design_list <- lapply(seq_along(unit_x), function(i) {
+    point <- unit_x[[i]]
+    tryCatch({
+      vec <- unlist(point)
+      if (is.null(vec) || length(vec) == 0) {
+        warning(sprintf("predict_surrogates: Empty point at index %d", i))
+        return(NULL)
+      }
+      if (is.null(names(vec))) {
+        names(vec) <- param_names
+      }
+      # Ensure we have all param_names
+      if (!all(param_names %in% names(vec))) {
+        warning(sprintf("predict_surrogates: Missing params at index %d", i))
+        return(NULL)
+      }
+      as.data.frame(as.list(vec[param_names]), stringsAsFactors = FALSE)
+    }, error = function(e) {
+      warning(sprintf("predict_surrogates: Error at index %d: %s", i, e$message))
+      return(NULL)
+    })
   })
+
+  # Filter NULLs and bind
+  design_list <- design_list[!sapply(design_list, is.null)]
+  if (length(design_list) == 0) {
+    stop("predict_surrogates: No valid design points", call. = FALSE)
+  }
+  design <- do.call(rbind, design_list)
   design_mat <- as.matrix(design)
 
-  purrr::imap(
-    surrogates,
-    ~ {
-      if (inherits(.x, "constant_predictor")) {
+  # Use base R lapply + setNames instead of purrr::imap to avoid
+  # confusing "In index: X" error messages from purrr 1.0.0+
+  surrogate_names <- names(surrogates)
+  predictions <- lapply(seq_along(surrogates), function(i) {
+    metric_name <- surrogate_names[i]
+    model <- surrogates[[i]]
+
+    tryCatch({
+      if (inherits(model, "constant_predictor")) {
         # Constant predictor fallback - returns constant mean with high uncertainty
         n_points <- nrow(design_mat)
-        list(mean = rep(.x$mean_value, n_points),
+        list(mean = rep(model$mean_value, n_points),
              sd = rep(1.0, n_points),  # High uncertainty to encourage exploration
-             model = .x)
-      } else if (inherits(.x, c("hetGP", "homGP"))) {
+             model = model)
+      } else if (inherits(model, c("hetGP", "homGP"))) {
         # Use hetGP/homGP predict method (same interface)
-        pred <- predict(x = design_mat, object = .x)
+        pred <- predict(x = design_mat, object = model)
         list(mean = as.numeric(pred$mean),
              sd = as.numeric(sqrt(pmax(pred$sd2, 0))),
-             model = .x)
+             model = model)
       } else {
         # Use DiceKriging predict method
-        pred <- DiceKriging::predict.km(.x, newdata = design_mat,
+        pred <- DiceKriging::predict.km(model, newdata = design_mat,
                                         type = "UK", se.compute = TRUE,
                                         cov.compute = FALSE)
         list(mean = as.numeric(pred$mean),
              sd = sqrt(pmax(pred$sd^2, 0)),
-             model = .x)
+             model = model)
       }
-    }
-  )
+    }, error = function(e) {
+      warning(sprintf("[predict_surrogates] Error predicting metric '%s': %s. Using fallback.",
+                      metric_name, e$message), call. = FALSE)
+      n_points <- nrow(design_mat)
+      # Return high uncertainty predictions to encourage exploration
+      list(mean = rep(0, n_points),
+           sd = rep(10.0, n_points),
+           model = structure(list(mean_value = 0, metric = metric_name),
+                             class = "constant_predictor"))
+    })
+  })
+  names(predictions) <- surrogate_names
+  predictions
 }

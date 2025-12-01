@@ -7,16 +7,21 @@ parse_constraints <- function(constraints) {
   if (!is.list(constraints)) {
     stop("`constraints` must be a named list.", call. = FALSE)
   }
+  # Use base R vapply instead of purrr::map_chr/map_dbl to avoid "In index: X" errors
+  constraint_names <- names(constraints)
+  directions <- vapply(constraints, function(x) {
+    dir <- x[[1]]
+    if (!dir %in% c("ge", "le")) {
+      stop("Constraint directions must be 'ge' or 'le'.", call. = FALSE)
+    }
+    dir
+  }, FUN.VALUE = character(1))
+  thresholds <- vapply(constraints, function(x) as.numeric(x[[2]]), FUN.VALUE = numeric(1))
+
   tibble::tibble(
-    metric = names(constraints),
-    direction = purrr::map_chr(constraints, ~ {
-      dir <- .x[[1]]
-      if (!dir %in% c("ge", "le")) {
-        stop("Constraint directions must be 'ge' or 'le'.", call. = FALSE)
-      }
-      dir
-    }),
-    threshold = purrr::map_dbl(constraints, ~ as.numeric(.x[[2]]))
+    metric = constraint_names,
+    direction = directions,
+    threshold = thresholds
   )
 }
 
@@ -26,7 +31,12 @@ is_feasible <- function(metrics, constraint_tbl) {
   if (nrow(constraint_tbl) == 0L) {
     return(TRUE)
   }
-  purrr::pmap_lgl(constraint_tbl, function(metric, direction, threshold) {
+  # Use base R vapply instead of purrr::pmap_lgl to avoid "In index: X" errors
+  results <- vapply(seq_len(nrow(constraint_tbl)), function(i) {
+    metric <- constraint_tbl$metric[i]
+    direction <- constraint_tbl$direction[i]
+    threshold <- constraint_tbl$threshold[i]
+
     value <- metrics[[metric]]
     if (is.null(value) || is.na(value)) {
       return(FALSE)
@@ -36,8 +46,8 @@ is_feasible <- function(metrics, constraint_tbl) {
     } else {
       value <= threshold
     }
-  }) |>
-    all()
+  }, FUN.VALUE = logical(1))
+  all(results)
 }
 
 #' Probability of feasibility under Gaussian predictive distribution
@@ -46,7 +56,12 @@ prob_feasibility <- function(mean, sd, constraint_tbl) {
   if (nrow(constraint_tbl) == 0L) {
     return(1)
   }
-  purrr::pmap_dbl(constraint_tbl, function(metric, direction, threshold) {
+  # Use base R vapply instead of purrr::pmap_dbl to avoid "In index: X" errors
+  probs <- vapply(seq_len(nrow(constraint_tbl)), function(i) {
+    metric <- constraint_tbl$metric[i]
+    direction <- constraint_tbl$direction[i]
+    threshold <- constraint_tbl$threshold[i]
+
     mu <- mean[[metric]]
     sigma <- sd[[metric]]
     if (is.null(mu) || is.na(mu) || is.null(sigma) || is.na(sigma) || sigma <= 0) {
@@ -57,8 +72,8 @@ prob_feasibility <- function(mean, sd, constraint_tbl) {
     } else {
       stats::pnorm((threshold - mu) / sigma, lower.tail = TRUE)
     }
-  }) |>
-    prod()
+  }, FUN.VALUE = numeric(1))
+  prod(probs)
 }
 
 
