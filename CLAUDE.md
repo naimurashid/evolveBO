@@ -99,7 +99,7 @@ The `bo_calibrate()` function orchestrates the complete Bayesian optimization lo
    - **Select diverse batch** (v0.3.0): Local penalization ensures spatial diversity when `q > 1`
    - **Choose fidelity**: Adaptive cost-aware selection (v0.3.0) or staged/threshold methods
    - **Evaluate and record**: Execute simulations and update history
-   - **Check convergence** (v0.3.0): Early stopping if improvement < 0.01% for 20 iterations
+   - **Check convergence** (v0.3.0): Early stopping if improvement < 0.1% for 5 iterations (configurable via `early_stop` parameter)
 
 **Returns**: `evolveBO_fit` object containing:
 - `history`: tibble of all evaluations
@@ -246,6 +246,36 @@ Three methods available via `fidelity_method` parameter:
 **Dispatcher**: `select_fidelity_method()` routes to appropriate method
 
 **Custom Costs** (v0.3.0): Use `fidelity_costs` parameter to specify non-linear cost relationships when computational cost doesn't scale linearly with replications (e.g., I/O overhead, parallelization effects)
+
+## Early Stopping Configuration
+
+The `early_stop` parameter controls convergence-based early termination:
+
+```r
+bo_calibrate(...,
+  early_stop = list(
+    enabled = TRUE,      # Enable/disable early stopping
+    patience = 5,        # BO iterations without improvement before checking
+    threshold = 1e-3,    # Minimum relative improvement (0.1%)
+    consecutive = 2      # Consecutive patience windows required to stop
+  )
+)
+```
+
+**Defaults** (if `early_stop = NULL`):
+- `enabled = TRUE`
+- `patience = 5` iterations
+- `threshold = 1e-3` (0.1% relative improvement)
+- `consecutive = 2` checks
+
+**To disable**: `early_stop = list(enabled = FALSE)`
+
+**How it works**:
+1. After each BO iteration, computes best feasible objective over last `patience` iterations
+2. Compares to best objective from before that window
+3. If relative improvement < `threshold`, increments counter
+4. If counter reaches `consecutive`, optimization stops early
+5. Also stops if max acquisition value falls below 1e-6 (all candidates exhausted)
 
 ## Common Development Patterns
 

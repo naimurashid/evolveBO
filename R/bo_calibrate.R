@@ -103,15 +103,29 @@
 #' @param covtype covariance kernel passed to [fit_surrogates()].
 #' @param integer_params optional character vector of parameters that should be
 #'   rounded to the nearest integer prior to simulation.
+#' @param early_stop optional list controlling early stopping based on convergence
+#'   detection. When the objective stops improving, optimization terminates early
+#'   to save budget. Options:
+#'   \describe{
+#'     \item{\code{enabled}}{Logical: enable early stopping (default: TRUE)}
+#'     \item{\code{patience}}{Integer: number of BO iterations without improvement
+#'       before considering convergence (default: 5)}
+#'     \item{\code{threshold}}{Numeric: minimum relative improvement required to
+#'       reset patience counter (default: 1e-3 = 0.1\%)}
+#'     \item{\code{consecutive}}{Integer: number of consecutive patience windows
+#'       showing no improvement required to trigger stop (default: 2)}
+#'   }
+#'   Default: NULL (uses default values: patience=5, threshold=1e-3, consecutive=2).
+#'   Set \code{early_stop = list(enabled = FALSE)} to disable early stopping entirely.
 #' @param progress logical; if `TRUE` (default) messages are emitted at key
 #'   milestones.
 #' @param ... additional arguments forwarded to `sim_fun`.
 #'
 #' @return An object of class `evolveBO_fit` containing the optimisation history,
 #'   best design, fitted surrogates, policy configuration, and posterior draws
-#'   supporting sensitivity diagnostics. Note: early stopping (v0.3.0) may
-#'   terminate before \code{budget} is exhausted if convergence is detected
-#'   (no improvement > 0.01\% for 20 iterations).
+#'   supporting sensitivity diagnostics. Note: early stopping may terminate before
+#'   \code{budget} is exhausted if convergence is detected (configurable via
+#'   \code{early_stop} parameter, default: no improvement > 0.1\% for 5 iterations).
 #'
 #' @importFrom utils head tail
 #' @export
@@ -134,6 +148,7 @@ bo_calibrate <- function(sim_fun,
                          candidate_pool = 2000,
                          covtype = "matern5_2",
                          integer_params = NULL,
+                         early_stop = NULL,
                          progress = TRUE,
                          ...) {
   acquisition <- match.arg(acquisition)
@@ -157,6 +172,26 @@ bo_calibrate <- function(sim_fun,
   if (budget < n_init) {
     warning("`budget` is less than `n_init`; only initial design will be evaluated.",
             call. = FALSE)
+  }
+
+  # Parse early_stop configuration with defaults
+  early_stop_config <- list(
+    enabled = TRUE,
+    patience = 5,
+    threshold = 1e-3,
+    consecutive = 2
+
+  )
+  if (!is.null(early_stop)) {
+    if (is.list(early_stop)) {
+      # Override defaults with user-provided values
+      if (!is.null(early_stop$enabled)) early_stop_config$enabled <- early_stop$enabled
+      if (!is.null(early_stop$patience)) early_stop_config$patience <- early_stop$patience
+      if (!is.null(early_stop$threshold)) early_stop_config$threshold <- early_stop$threshold
+      if (!is.null(early_stop$consecutive)) early_stop_config$consecutive <- early_stop$consecutive
+    } else {
+      stop("`early_stop` must be a list or NULL.", call. = FALSE)
+    }
   }
 
   rng_seed <- if (is.null(seed)) sample.int(1e6, 1) else seed
@@ -598,21 +633,24 @@ bo_calibrate <- function(sim_fun,
     }
     best_obj_history <- c(best_obj_history, current_best)
 
-    # Check for early stopping after minimum iterations
-    if (iter_counter > n_init) {
+    # Check for early stopping after minimum iterations (if enabled)
+    if (early_stop_config$enabled && iter_counter > n_init) {
       # Check 1: No improvement in objective for patience iterations
-      patience <- 10
-      if (length(best_obj_history) >= patience) {
-        recent_best <- min(tail(best_obj_history, patience), na.rm = TRUE)
-        earlier_best <- min(head(best_obj_history, length(best_obj_history) - patience), na.rm = TRUE)
+      es_patience <- early_stop_config$patience
+      es_threshold <- early_stop_config$threshold
+      es_consecutive <- early_stop_config$consecutive
+
+      if (length(best_obj_history) >= es_patience) {
+        recent_best <- min(tail(best_obj_history, es_patience), na.rm = TRUE)
+        earlier_best <- min(head(best_obj_history, length(best_obj_history) - es_patience), na.rm = TRUE)
         improvement <- (earlier_best - recent_best) / (abs(earlier_best) + 1e-8)
 
-        if (improvement < 1e-4) {
+        if (improvement < es_threshold) {
           no_improvement_count <- no_improvement_count + 1
-          if (no_improvement_count >= 2) {
+          if (no_improvement_count >= es_consecutive) {
             if (progress) {
-              message(sprintf("Early stopping at iteration %d: no improvement > 1e-4 in last %d iterations",
-                              iter_counter, patience))
+              message(sprintf("Early stopping at iteration %d: no improvement > %.2e in last %d iterations",
+                              iter_counter, es_threshold, es_patience))
             }
             break
           }
@@ -663,7 +701,8 @@ bo_calibrate <- function(sim_fun,
         fidelity_method = fidelity_method,
         fidelity_costs = fidelity_costs,
         candidate_pool = candidate_pool,
-        objective = objective
+        objective = objective,
+        early_stop = early_stop_config
       ),
       diagnostics = diagnostics,
       # NEW: Store bounds and constraints for warm-starting
