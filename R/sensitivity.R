@@ -87,7 +87,8 @@ sa_gradients <- function(surrogates,
   param_names <- names(bounds)
   model_list <- list(outcome = surrogates[[outcome]])
 
-  gradients <- purrr::map_dfr(param_names, function(param) {
+  # OPTIMIZED: Use lapply + bind_rows instead of map_dfr
+  grad_list <- lapply(param_names, function(param) {
     grad_info <- surrogate_gradient(model_list, theta_unit, bounds, param, eps)
     tibble::tibble(
       parameter = param,
@@ -95,6 +96,7 @@ sa_gradients <- function(surrogates,
       sd = if (return_sd) grad_info$sd else NA_real_
     )
   })
+  gradients <- dplyr::bind_rows(grad_list)
 
   gradients
 }
@@ -125,12 +127,13 @@ cov_effects <- function(surrogates,
 
   points <- lhs::randomLHS(n_mc, d)
   colnames(points) <- param_names
-  gradients <- purrr::map(seq_len(n_mc), function(i) {
+  # OPTIMIZED: Pre-allocate matrix instead of do.call(rbind, ...)
+  gradient_mat <- matrix(NA_real_, nrow = n_mc, ncol = d)
+  for (i in seq_len(n_mc)) {
     theta_unit <- points[i, , drop = TRUE]
     theta_list <- scale_from_unit(as.list(theta_unit), bounds)
-    sa_gradients(surrogates, theta_list, bounds, outcome = outcome, eps = eps, return_sd = FALSE)$gradient
-  })
-  gradient_mat <- do.call(rbind, gradients)
+    gradient_mat[i, ] <- sa_gradients(surrogates, theta_list, bounds, outcome = outcome, eps = eps, return_sd = FALSE)$gradient
+  }
   cov_mat <- stats::cov(gradient_mat)
   dimnames(cov_mat) <- list(param_names, param_names)
   cov_mat
@@ -280,32 +283,41 @@ gradient_sampling <- function(surrogates, bounds, outcome, gradient_points, eps)
   param_names <- names(bounds)
   samples <- lhs::randomLHS(gradient_points, d)
   colnames(samples) <- param_names
-  sample_tbl <- purrr::imap_dfr(seq_len(gradient_points), function(i, idx) {
+  # OPTIMIZED: Use lapply + bind_rows instead of imap_dfr
+  sample_list <- lapply(seq_len(gradient_points), function(i) {
     theta_unit <- samples[i, , drop = TRUE]
     theta_list <- scale_from_unit(as.list(theta_unit), bounds)
     grads <- sa_gradients(surrogates, theta_list, bounds, outcome = outcome, eps = eps, return_sd = FALSE)
     grads |>
       dplyr::mutate(point_id = i)
   })
+  sample_tbl <- dplyr::bind_rows(sample_list)
 
   sample_tbl
 }
 
 kernel_comparison <- function(history, bounds, objective, constraints, kernel_options) {
   constraint_tbl <- parse_constraints(constraints)
-  purrr::map_dfr(kernel_options, function(kernel) {
+  # OPTIMIZED: Use lapply + bind_rows instead of map_dfr
+  kernel_results <- lapply(kernel_options, function(kernel) {
     fits <- fit_surrogates(history, objective, constraint_tbl, covtype = convert_kernel(kernel))
-    purrr::imap_dfr(fits, function(model, metric) {
+    metric_names <- names(fits)
+    inner_results <- lapply(seq_along(fits), function(i) {
+      model <- fits[[i]]
+      metric <- metric_names[i]
       loglik <- tryCatch(as.numeric(DiceKriging::logLik(model)), error = function(e) NA_real_)
       tibble::tibble(kernel = kernel, metric = metric, loglik = loglik)
     })
+    dplyr::bind_rows(inner_results)
   })
+  dplyr::bind_rows(kernel_results)
 }
 
 acquisition_comparison <- function(surrogates, bounds, objective, constraints, acquisition_options) {
   constraint_tbl <- parse_constraints(constraints)
   best_feasible <- Inf
-  acquisition_tbl <- purrr::map_dfr(acquisition_options, function(option) {
+  # OPTIMIZED: Use lapply + bind_rows instead of map_dfr
+  acq_results <- lapply(acquisition_options, function(option) {
     candidates <- lhs_candidate_pool(500, bounds)
     scores <- evaluate_acquisition(option, candidates, surrogates, constraint_tbl, objective, best_feasible)
     tibble::tibble(
@@ -314,6 +326,7 @@ acquisition_comparison <- function(surrogates, bounds, objective, constraints, a
       sd_score = stats::sd(scores, na.rm = TRUE)
     )
   })
+  acquisition_tbl <- dplyr::bind_rows(acq_results)
   acquisition_tbl
 }
 

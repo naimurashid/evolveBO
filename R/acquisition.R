@@ -187,7 +187,12 @@ select_batch_local_penalization <- function(candidates, acq_scores, q,
 
   selected_indices <- integer(q)
   penalized_scores <- acq_scores
-  candidates_matrix <- do.call(rbind, candidates)
+  # OPTIMIZED: Pre-allocate matrix instead of do.call(rbind, ...)
+  n_dims <- length(candidates[[1]])
+  candidates_matrix <- matrix(NA_real_, nrow = n_candidates, ncol = n_dims)
+  for (i in seq_len(n_candidates)) {
+    candidates_matrix[i, ] <- as.numeric(candidates[[i]])
+  }
 
   for (i in seq_len(q)) {
     # Select point with highest penalized acquisition

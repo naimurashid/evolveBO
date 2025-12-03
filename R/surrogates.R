@@ -57,25 +57,25 @@ fit_surrogates <- function(history,
   # which can cause confusing "In index: X" error messages
   surrogates <- lapply(metrics_needed, function(metric) {
     tryCatch({
-      # Extract values with robust error handling
-      values <- sapply(seq_along(history$metrics), function(i) {
+      # OPTIMIZED: Extract values with vapply for type safety and speed
+      values <- vapply(seq_along(history$metrics), function(i) {
         tryCatch({
           m <- history$metrics[[i]]
           if (is.null(m) || !metric %in% names(m)) return(NA_real_)
           as.numeric(m[[metric]])
         }, error = function(e) NA_real_)
-      })
+      }, FUN.VALUE = numeric(1))
 
-      noise <- sapply(seq_along(history$variance), function(i) {
+      noise <- vapply(seq_along(history$variance), function(i) {
         tryCatch({
           var_list <- history$variance[[i]]
           if (is.null(var_list) || !metric %in% names(var_list)) return(NA_real_)
           as.numeric(var_list[[metric]])
         }, error = function(e) NA_real_)
-      })
+      }, FUN.VALUE = numeric(1))
 
       # Check if we have replicated observations (multiple evals at same theta)
-      has_replicates <- any(sapply(id_groups, length) > 1)
+      has_replicates <- any(vapply(id_groups, length, FUN.VALUE = integer(1)) > 1)
       has_variance <- !all(is.na(noise))
 
       # Extract previous model for warm-starting (if available)
@@ -99,9 +99,9 @@ fit_surrogates <- function(history,
                       metric, e$message), call. = FALSE)
       # Compute fallback mean from available values
       fallback_mean <- tryCatch({
-        vals <- sapply(history$metrics, function(m) {
+        vals <- vapply(history$metrics, function(m) {
           if (is.null(m) || !metric %in% names(m)) NA_real_ else as.numeric(m[[metric]])
-        })
+        }, FUN.VALUE = numeric(1))
         mean(vals, na.rm = TRUE)
       }, error = function(e2) NA_real_)
 
@@ -130,13 +130,13 @@ fit_hetgp_surrogate <- function(history, metric, id_groups, param_names, covtype
     X_list[[i]] <- as.numeric(unit_theta)
 
     # All observations at this location
-    Z_list[[i]] <- sapply(idx, function(j) {
+    Z_list[[i]] <- vapply(idx, function(j) {
       as.numeric(history$metrics[[j]][[metric]])
-    })
+    }, FUN.VALUE = numeric(1))
   }
 
   # Filter out locations where ALL Z values are NA
-  valid_locs <- sapply(Z_list, function(z) !all(is.na(z)))
+  valid_locs <- vapply(Z_list, function(z) !all(is.na(z)), FUN.VALUE = logical(1))
   n_invalid <- sum(!valid_locs)
   if (n_invalid > 0) {
     message(sprintf("  [hetGP] Filtered %d/%d locations with all-NA values for metric '%s'",
@@ -156,7 +156,13 @@ fit_hetgp_surrogate <- function(history, metric, id_groups, param_names, covtype
     ))
   }
 
-  X <- do.call(rbind, X_list)
+  # OPTIMIZED: Pre-allocate matrix instead of do.call(rbind, ...)
+  n_locs <- length(X_list)
+  n_params <- length(param_names)
+  X <- matrix(NA_real_, nrow = n_locs, ncol = n_params)
+  for (i in seq_len(n_locs)) {
+    X[i, ] <- X_list[[i]]
+  }
   colnames(X) <- param_names
 
   # Filter NA values within each location's Z values (keep only non-NA)
@@ -164,7 +170,7 @@ fit_hetgp_surrogate <- function(history, metric, id_groups, param_names, covtype
 
   # hetGP expects Z as vector with mult indicating replication counts
   Z_vec <- unlist(Z_list)
-  mult <- sapply(Z_list, length)
+  mult <- vapply(Z_list, length, FUN.VALUE = integer(1))
 
   # Map covtype to hetGP
   hetgp_cov <- switch(covtype,
@@ -192,11 +198,11 @@ fit_hetgp_surrogate <- function(history, metric, id_groups, param_names, covtype
     X_agg <- X[X_unique_idx, , drop = FALSE]
 
     # Aggregate Z values at each unique location
-    Z_agg <- sapply(seq_len(nrow(X_agg)), function(i) {
+    Z_agg <- vapply(seq_len(nrow(X_agg)), function(i) {
       # Find all rows matching this X location
       matching <- apply(X, 1, function(row) all(row == X_agg[i, ]))
       mean(Z_vec[matching], na.rm = TRUE)
-    })
+    }, FUN.VALUE = numeric(1))
 
     # Check for constant/near-constant data which causes GP fitting to fail
     z_range <- diff(range(Z_agg, na.rm = TRUE))
@@ -280,7 +286,7 @@ fit_dicekriging_surrogate <- function(history, metric, id_groups, param_names,
   })
 
   # Filter out NULLs and bind
-  aggr_list <- aggr_list[!sapply(aggr_list, is.null)]
+  aggr_list <- aggr_list[!vapply(aggr_list, is.null, FUN.VALUE = logical(1))]
   if (length(aggr_list) == 0) {
     stop(sprintf("No valid observations to fit surrogate for metric '%s'", metric), call. = FALSE)
   }
@@ -307,16 +313,17 @@ fit_dicekriging_surrogate <- function(history, metric, id_groups, param_names,
     ))
   }
 
-  # Use base R lapply instead of purrr::map
-  X_unique <- lapply(aggr$unit_x, function(x) {
-    vec <- as.numeric(x)
-    if (length(vec) != length(param_names)) {
+  # OPTIMIZED: Pre-allocate matrix instead of do.call(rbind, ...)
+  n_rows <- nrow(aggr)
+  n_cols <- length(param_names)
+  X_unique <- matrix(NA_real_, nrow = n_rows, ncol = n_cols)
+  for (i in seq_len(n_rows)) {
+    vec <- as.numeric(aggr$unit_x[[i]])
+    if (length(vec) != n_cols) {
       stop("Surrogate design dimension mismatch.", call. = FALSE)
     }
-    vec
-  })
-  X_unique <- do.call(rbind, X_unique)
-  X_unique <- as.matrix(X_unique)
+    X_unique[i, ] <- vec
+  }
   colnames(X_unique) <- param_names
 
   noise_vec <- aggr$noise

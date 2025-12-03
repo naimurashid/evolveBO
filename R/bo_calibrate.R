@@ -349,10 +349,14 @@ bo_calibrate <- function(sim_fun,
 
         # Extract design matrix and objective values from history
         # theta is stored as a list column - unpack to matrix
+        # OPTIMIZED: Pre-allocate matrix instead of do.call(rbind, ...)
         param_names <- names(bounds)
-        X_init <- do.call(rbind, lapply(history$theta, function(th) {
-          unlist(th[param_names])
-        }))
+        n_rows <- nrow(history)
+        n_params <- length(param_names)
+        X_init <- matrix(NA_real_, nrow = n_rows, ncol = n_params)
+        for (i in seq_len(n_rows)) {
+          X_init[i, ] <- unlist(history$theta[[i]][param_names])
+        }
         colnames(X_init) <- param_names
         y_init <- history[[objective]]
 
