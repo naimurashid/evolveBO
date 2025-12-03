@@ -460,13 +460,19 @@ bo_calibrate <- function(sim_fun,
 
     unit_candidates <- lhs_candidate_pool(candidate_pool_size, bounds)
 
+    # Single batch prediction used for acquisition + fidelity routing (avoids repeated GP calls)
+    candidate_predictions <- predict_surrogates(surrogates, unit_candidates)
+    candidate_prob_feas <- prob_feasibility_batch(candidate_predictions, constraint_tbl)
+
     acquisition_scores <- evaluate_acquisition(
       acquisition = acquisition,
       unit_candidates = unit_candidates,
       surrogates = surrogates,
       constraint_tbl = constraint_tbl,
       objective = objective,
-      best_feasible = best_feasible_value
+      best_feasible = best_feasible_value,
+      predictions = candidate_predictions,
+      prob_feas = candidate_prob_feas
     )
 
     n_new <- min(q, budget - eval_counter)
@@ -501,28 +507,24 @@ bo_calibrate <- function(sim_fun,
       theta <- scale_from_unit(chosen_unit, bounds)
       theta <- coerce_theta_types(theta, integer_params)
 
-      prob_feas <- estimate_candidate_feasibility(
-        surrogates = surrogates,
-        unit_x = list(chosen_unit),
-        constraint_tbl = constraint_tbl
-      )
+      prob_feas <- candidate_prob_feas[selected_idx[i]]
 
-      # Get all surrogate predictions for CV computation
-      all_preds <- predict_surrogates(surrogates, list(chosen_unit))
+      # Get surrogate predictions from cached batch for CV computation
+      obj_pred <- candidate_predictions[[objective]]
+      pred_obj_mean <- obj_pred$mean[selected_idx[i]]
+      pred_obj_sd <- obj_pred$sd[selected_idx[i]]
+      cv_objective <- pred_obj_sd / max(abs(pred_obj_mean), 1e-6)
 
-      # Compute CV for objective
-      pred_obj <- all_preds[[objective]]
-      cv_objective <- pred_obj$sd[[1]] / max(abs(pred_obj$mean[[1]]), 1e-6)
-
-      # Compute CVs for all constraint metrics
-      cv_constraints <- sapply(constraint_metric_names, function(metric_name) {
-        if (metric_name %in% names(all_preds)) {
-          pred <- all_preds[[metric_name]]
-          pred$sd[[1]] / max(abs(pred$mean[[1]]), 1e-6)
+      cv_constraints <- vapply(constraint_metric_names, function(metric_name) {
+        if (metric_name %in% names(candidate_predictions)) {
+          pred <- candidate_predictions[[metric_name]]
+          pred_sd <- pred$sd[selected_idx[i]]
+          pred_mean <- pred$mean[selected_idx[i]]
+          pred_sd / max(abs(pred_mean), 1e-6)
         } else {
-          0  # if metric not available, assume low uncertainty
+          0
         }
-      })
+      }, numeric(1))
 
       # For hybrid_staged: use max CV across constraints (tighter precision needed)
       # For other methods: use objective CV only
@@ -782,12 +784,12 @@ record_evaluation <- function(history,
 
   # Unpack metrics into individual columns for easier access
   # This allows adaptive bounds functions to directly access constraint metrics
-  # Ensure all metric values are numeric to avoid bind_rows type conflicts
+  # OPTIMIZED: Use vapply for faster vectorized conversion
   metrics_df <- if (length(metrics) > 0) {
-    metrics_list <- lapply(as.list(metrics), function(x) {
-      if (is.null(x) || length(x) == 0) NA_real_ else as.numeric(x)
-    })
-    as.data.frame(metrics_list, stringsAsFactors = FALSE)
+    metrics_vec <- vapply(metrics, function(x) {
+      if (is.null(x) || length(x) == 0) NA_real_ else as.numeric(x)[1]
+    }, numeric(1))
+    as.data.frame(as.list(metrics_vec), stringsAsFactors = FALSE)
   } else {
     data.frame()
   }
@@ -813,11 +815,12 @@ record_evaluation <- function(history,
   # Unpack theta into individual parameter columns
   # This ensures new rows have the same columns as initial history (which has
   # unpacked eff, fut, ev, etc.) and prevents NAs when bind_rows combines them
+  # OPTIMIZED: Use vapply for faster vectorized conversion
   theta_df <- if (length(theta) > 0) {
-    theta_list <- lapply(as.list(theta), function(x) {
-      if (is.null(x) || length(x) == 0) NA_real_ else as.numeric(x)
-    })
-    as.data.frame(theta_list, stringsAsFactors = FALSE)
+    theta_vec <- vapply(theta, function(x) {
+      if (is.null(x) || length(x) == 0) NA_real_ else as.numeric(x)[1]
+    }, numeric(1))
+    as.data.frame(as.list(theta_vec), stringsAsFactors = FALSE)
   } else {
     data.frame()
   }
@@ -973,12 +976,10 @@ validate_fidelity_levels <- function(fidelity_levels) {
 #' @keywords internal
 lhs_candidate_pool <- function(n, bounds) {
   lhs <- lhs::randomLHS(n, length(bounds))
-  # Use base R lapply instead of purrr::map
-  lapply(seq_len(n), function(i) {
-    values <- lhs[i, , drop = TRUE]
-    names(values) <- names(bounds)
-    values
-  })
+  # OPTIMIZED: Set column names once on matrix, then use asplit for faster conversion
+  colnames(lhs) <- names(bounds)
+  # asplit returns a list of named vectors more efficiently than lapply
+  asplit(lhs, 1)
 }
 
 #' @keywords internal
@@ -1535,14 +1536,18 @@ evaluate_acquisition <- function(acquisition,
                                  surrogates,
                                  constraint_tbl,
                                  objective,
-                                 best_feasible) {
+                                 best_feasible,
+                                 predictions = NULL,
+                                 prob_feas = NULL) {
   if (identical(acquisition, "eci")) {
     return(acq_eci(
       unit_x = unit_candidates,
       surrogates = surrogates,
       constraint_tbl = constraint_tbl,
       objective = objective,
-      best_feasible = best_feasible
+      best_feasible = best_feasible,
+      pred = predictions,
+      prob_feas = prob_feas
     ))
   }
   if (identical(acquisition, "qehvi")) {
@@ -1551,7 +1556,9 @@ evaluate_acquisition <- function(acquisition,
       surrogates = surrogates,
       constraint_tbl = constraint_tbl,
       objective = objective,
-      best_feasible = best_feasible
+      best_feasible = best_feasible,
+      pred = predictions,
+      prob_feas = prob_feas
     ))
   }
   stop(sprintf("Acquisition '%s' is not supported.", acquisition), call. = FALSE)

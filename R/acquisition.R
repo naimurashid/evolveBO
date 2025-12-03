@@ -6,6 +6,10 @@
 #' @param objective name of the objective metric (character scalar).
 #' @param best_feasible best observed value of the objective among feasible points
 #'   (numeric scalar or `Inf` if none observed).
+#' @param pred optional list of surrogate predictions (as from [predict_surrogates()]).
+#'   When supplied, avoids recomputing GP predictions for acquisition scoring.
+#' @param prob_feas optional vector of feasibility probabilities aligned with `unit_x`.
+#'   If NULL, computed internally from `pred` and `constraint_tbl`.
 #'
 #' @return numeric vector of acquisition scores for each candidate.
 #' @export
@@ -13,11 +17,15 @@ acq_eci <- function(unit_x,
                     surrogates,
                     constraint_tbl,
                     objective,
-                    best_feasible) {
+                    best_feasible,
+                    pred = NULL,
+                    prob_feas = NULL) {
   if (!objective %in% names(surrogates)) {
     stop("Objective surrogate not available.", call. = FALSE)
   }
-  pred <- predict_surrogates(surrogates, unit_x)
+  if (is.null(pred)) {
+    pred <- predict_surrogates(surrogates, unit_x)
+  }
 
   obj_pred <- pred[[objective]]
   mu_obj <- obj_pred$mean
@@ -26,7 +34,9 @@ acq_eci <- function(unit_x,
   metric_names <- names(pred)
 
   # PERFORMANCE: Use vectorized batch computation instead of per-candidate loop
-  prob_feas <- prob_feasibility_batch(pred, constraint_tbl)
+  if (is.null(prob_feas)) {
+    prob_feas <- prob_feasibility_batch(pred, constraint_tbl)
+  }
 
   has_feasible <- is.finite(best_feasible)
 
@@ -71,10 +81,13 @@ acq_qehvi <- function(unit_x,
                       surrogates,
                       constraint_tbl,
                       objective,
-                      best_feasible) {
+                      best_feasible,
+                      pred = NULL,
+                      prob_feas = NULL) {
   warning("acq_qehvi is currently an alias for acq_eci. Full qEHVI implementation is planned for a future release.",
           call. = FALSE)
-  acq_eci(unit_x, surrogates, constraint_tbl, objective, best_feasible)
+  acq_eci(unit_x, surrogates, constraint_tbl, objective, best_feasible,
+          pred = pred, prob_feas = prob_feas)
 }
 
 #' @keywords internal

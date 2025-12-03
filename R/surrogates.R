@@ -419,11 +419,17 @@ extract_gp_hyperparams <- function(model) {
 #' Predict metrics from fitted surrogates
 #'
 #' Handles both DiceKriging::km and hetGP::hetGP model objects.
+#' Optimized for batch prediction with minimal data frame overhead.
 #'
 #' @keywords internal
 predict_surrogates <- function(surrogates, unit_x) {
   if (length(surrogates) == 0L) {
     stop("No surrogate models available for prediction.", call. = FALSE)
+  }
+
+  n_candidates <- length(unit_x)
+  if (n_candidates == 0L) {
+    stop("predict_surrogates: No candidate points provided", call. = FALSE)
   }
 
   # Detect model type from first non-constant surrogate to get param_names
@@ -444,37 +450,54 @@ predict_surrogates <- function(surrogates, unit_x) {
     param_names <- names(unit_x[[1]])
   }
 
-  # Build design matrix with robust error handling
-  design_list <- lapply(seq_along(unit_x), function(i) {
+  n_params <- length(param_names)
+
+  # OPTIMIZED: Build design matrix directly without per-candidate data.frame creation
+  # Pre-allocate matrix and fill row-by-row (much faster than lapply + rbind)
+  design_mat <- matrix(NA_real_, nrow = n_candidates, ncol = n_params)
+  colnames(design_mat) <- param_names
+
+  valid_rows <- rep(TRUE, n_candidates)
+  for (i in seq_len(n_candidates)) {
     point <- unit_x[[i]]
     tryCatch({
       vec <- unlist(point)
       if (is.null(vec) || length(vec) == 0) {
-        warning(sprintf("predict_surrogates: Empty point at index %d", i))
-        return(NULL)
+        valid_rows[i] <- FALSE
+        next
       }
       if (is.null(names(vec))) {
         names(vec) <- param_names
       }
-      # Ensure we have all param_names
-      if (!all(param_names %in% names(vec))) {
-        warning(sprintf("predict_surrogates: Missing params at index %d", i))
-        return(NULL)
+      # Extract values in param_names order
+      if (all(param_names %in% names(vec))) {
+        design_mat[i, ] <- as.numeric(vec[param_names])
+      } else {
+        valid_rows[i] <- FALSE
       }
-      as.data.frame(as.list(vec[param_names]), stringsAsFactors = FALSE)
     }, error = function(e) {
-      warning(sprintf("predict_surrogates: Error at index %d: %s", i, e$message))
-      return(NULL)
+      valid_rows[i] <<- FALSE
     })
-  })
-
-  # Filter NULLs and bind
-  design_list <- design_list[!sapply(design_list, is.null)]
-  if (length(design_list) == 0) {
-    stop("predict_surrogates: No valid design points", call. = FALSE)
   }
-  design <- do.call(rbind, design_list)
-  design_mat <- as.matrix(design)
+
+  # Filter invalid rows if any
+  if (!all(valid_rows)) {
+    n_invalid <- sum(!valid_rows)
+    if (n_invalid > 0 && n_invalid < n_candidates) {
+      warning(sprintf("predict_surrogates: Filtered %d invalid points", n_invalid))
+      design_mat <- design_mat[valid_rows, , drop = FALSE]
+    } else if (n_invalid == n_candidates) {
+      stop("predict_surrogates: No valid design points", call. = FALSE)
+    }
+  }
+
+  # Convert to data.frame ONCE for DiceKriging compatibility (km requires data.frame)
+  # hetGP can use matrix directly
+  design_df <- as.data.frame(design_mat, stringsAsFactors = FALSE)
+
+  # Cache number of points for efficiency
+
+  n_points <- nrow(design_mat)
 
   # Use base R lapply + setNames instead of purrr::imap to avoid
   # confusing "In index: X" error messages from purrr 1.0.0+
@@ -486,21 +509,20 @@ predict_surrogates <- function(surrogates, unit_x) {
     tryCatch({
       if (inherits(model, "constant_predictor")) {
         # Constant predictor fallback - returns constant mean with high uncertainty
-        n_points <- nrow(design_mat)
         list(mean = rep(model$mean_value, n_points),
              sd = rep(1.0, n_points),  # High uncertainty to encourage exploration
              model = model)
       } else if (inherits(model, c("hetGP", "homGP"))) {
-        # Use hetGP/homGP predict method (same interface)
+        # Use hetGP/homGP predict method - can use matrix directly (faster)
         pred <- predict(x = design_mat, object = model)
         list(mean = as.numeric(pred$mean),
              sd = as.numeric(sqrt(pmax(pred$sd2, 0))),
              model = model)
       } else {
-        # Use DiceKriging predict method
-        pred <- DiceKriging::predict.km(model, newdata = design_mat,
+        # Use DiceKriging predict method - requires data.frame
+        pred <- DiceKriging::predict.km(model, newdata = design_df,
                                         type = "UK", se.compute = TRUE,
-                                        cov.compute = FALSE)
+                                        cov.compute = FALSE, checkNames = FALSE)
         list(mean = as.numeric(pred$mean),
              sd = sqrt(pmax(pred$sd^2, 0)),
              model = model)
@@ -508,7 +530,6 @@ predict_surrogates <- function(surrogates, unit_x) {
     }, error = function(e) {
       warning(sprintf("[predict_surrogates] Error predicting metric '%s': %s. Using fallback.",
                       metric_name, e$message), call. = FALSE)
-      n_points <- nrow(design_mat)
       # Return high uncertainty predictions to encourage exploration
       list(mean = rep(0, n_points),
            sd = rep(10.0, n_points),
