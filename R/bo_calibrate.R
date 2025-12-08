@@ -666,10 +666,12 @@ bo_calibrate <- function(sim_fun,
       }
 
       # Check 2: All acquisition values very small (converged)
-      if (max(acquisition_scores, na.rm = TRUE) < 1e-6) {
+      # Use selected batch scores (what's actually being evaluated) rather than full pool
+      selected_acq_max <- max(acquisition_scores[selected_idx], na.rm = TRUE)
+      if (selected_acq_max < 1e-3) {
         if (progress) {
-          message(sprintf("Early stopping at iteration %d: max acquisition %.2e < threshold",
-                          iter_counter, max(acquisition_scores, na.rm = TRUE)))
+          message(sprintf("Early stopping at iteration %d: max selected acquisition %.2e < threshold",
+                          iter_counter, selected_acq_max))
         }
         break
       }
