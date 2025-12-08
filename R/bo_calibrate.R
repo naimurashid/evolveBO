@@ -294,6 +294,13 @@ bo_calibrate <- function(sim_fun,
     history <- initial_history
     n_init_actual <- nrow(initial_history)
 
+    # IMPORTANT: Update n_init to match warmstart history size
+
+    # This ensures early_stop_config works correctly (checks iter_counter > n_init)
+    # Without this, warmstart with 55 points but n_init=90 would require 91 BO iterations
+    # before early stopping is even considered
+    n_init <- n_init_actual
+
     if (progress) {
       message(sprintf(
         "Using %d evaluations from initial_history (skipping random initialization)",
@@ -401,6 +408,7 @@ bo_calibrate <- function(sim_fun,
   prev_surrogates <- NULL
   best_obj_history <- numeric()
   no_improvement_count <- 0
+  low_acq_count <- 0  # Counter for consecutive low acquisition score iterations
 
   while (eval_counter < budget) {
     iter_counter <- iter_counter + 1L
@@ -640,40 +648,66 @@ bo_calibrate <- function(sim_fun,
     best_obj_history <- c(best_obj_history, current_best)
 
     # Check for early stopping after minimum iterations (if enabled)
-    if (early_stop_config$enabled && iter_counter > n_init) {
+    # Start checking after 3 BO iterations (not n_init, which could be 60+)
+    min_iters_before_stopping <- 3
+    if (early_stop_config$enabled && iter_counter > min_iters_before_stopping) {
       # Check 1: No improvement in objective for patience iterations
-      es_patience <- early_stop_config$patience
-      es_threshold <- early_stop_config$threshold
-      es_consecutive <- early_stop_config$consecutive
+      es_patience <- early_stop_config$patience  # default: 5 iterations
+      es_threshold <- early_stop_config$threshold  # default: 1e-3 (0.1%)
 
-      if (length(best_obj_history) >= es_patience) {
-        recent_best <- min(tail(best_obj_history, es_patience), na.rm = TRUE)
-        earlier_best <- min(head(best_obj_history, length(best_obj_history) - es_patience), na.rm = TRUE)
-        improvement <- (earlier_best - recent_best) / (abs(earlier_best) + 1e-8)
+      if (length(best_obj_history) >= es_patience + 1) {
+        # Compare current best vs best from es_patience iterations ago
+        current_best_val <- best_obj_history[length(best_obj_history)]
+        earlier_best_val <- best_obj_history[length(best_obj_history) - es_patience]
+
+        # Relative improvement (positive means we improved, i.e., found lower objective)
+        improvement <- (earlier_best_val - current_best_val) / (abs(earlier_best_val) + 1e-8)
 
         if (improvement < es_threshold) {
+          # No meaningful improvement in last es_patience iterations
           no_improvement_count <- no_improvement_count + 1
-          if (no_improvement_count >= es_consecutive) {
+          if (progress && no_improvement_count == 1) {
+            message(sprintf("  -> No improvement > %.1f%% in last %d iterations (count: %d)",
+                            es_threshold * 100, es_patience, no_improvement_count))
+          }
+          # Trigger after seeing no improvement for `consecutive` checks
+          if (no_improvement_count >= early_stop_config$consecutive) {
             if (progress) {
-              message(sprintf("Early stopping at iteration %d: no improvement > %.2e in last %d iterations",
-                              iter_counter, es_threshold, es_patience))
+              message(sprintf("Early stopping at iteration %d: no improvement > %.1f%% for %d consecutive iterations",
+                              iter_counter, es_threshold * 100, no_improvement_count))
             }
             break
           }
         } else {
+          if (no_improvement_count > 0 && progress) {
+            message(sprintf("  -> Improvement detected (%.2f%%), resetting counter", improvement * 100))
+          }
           no_improvement_count <- 0
         }
       }
 
       # Check 2: All acquisition values very small (converged)
       # Use selected batch scores (what's actually being evaluated) rather than full pool
-      selected_acq_max <- max(acquisition_scores[selected_idx], na.rm = TRUE)
-      if (selected_acq_max < 1e-3) {
-        if (progress) {
-          message(sprintf("Early stopping at iteration %d: max selected acquisition %.2e < threshold",
-                          iter_counter, selected_acq_max))
+      # Threshold of 0.1 means we stop when expected improvement is <10% of current best
+      # Require 3 consecutive iterations with low acquisition before stopping
+      # Guard against empty selected_idx (would return -Inf from max())
+      if (length(selected_idx) > 0) {
+        selected_acq_max <- max(acquisition_scores[selected_idx], na.rm = TRUE)
+      } else {
+        selected_acq_max <- Inf  # Don't trigger early stopping if no candidates selected
+      }
+      acq_patience <- 3  # Number of consecutive low-acq iterations required
+      if (is.finite(selected_acq_max) && selected_acq_max < 0.1) {
+        low_acq_count <- low_acq_count + 1
+        if (low_acq_count >= acq_patience) {
+          if (progress) {
+            message(sprintf("Early stopping at iteration %d: max acquisition < 0.1 for %d consecutive iterations",
+                            iter_counter, acq_patience))
+          }
+          break
         }
-        break
+      } else {
+        low_acq_count <- 0  # Reset counter if acquisition goes back up
       }
     }
   }
