@@ -7,7 +7,7 @@
 #' @importFrom rlang .data
 #' @export
 summarise_case_study <- function(fit) {
-  stopifnot(inherits(fit, "evolveBO_fit"))
+  stopifnot(inherits(fit, "BATON_fit"))
   best_theta <- fit$best_theta
   design_tbl <- tibble::tibble(
     parameter = names(best_theta),
@@ -51,7 +51,7 @@ case_study_diagnostics <- function(fit,
                                    sobol_samples = 5000,
                                    gradient_points = 200,
                                    eps = 1e-3) {
-  stopifnot(inherits(fit, "evolveBO_fit"))
+  stopifnot(inherits(fit, "BATON_fit"))
   bounds <- infer_bounds_from_history(fit$history)
   objective <- fit$policies$objective %||% names(fit$surrogates)[1]
   sobol_tbl <- sa_sobol(fit$surrogates, bounds, outcome = objective, n_mc = sobol_samples)

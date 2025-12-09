@@ -121,7 +121,7 @@
 #'   milestones.
 #' @param ... additional arguments forwarded to `sim_fun`.
 #'
-#' @return An object of class `evolveBO_fit` containing the optimisation history,
+#' @return An object of class `BATON_fit` containing the optimisation history,
 #'   best design, fitted surrogates, policy configuration, and posterior draws
 #'   supporting sensitivity diagnostics. Note: early stopping may terminate before
 #'   \code{budget} is exhausted if convergence is detected (configurable via
@@ -213,7 +213,7 @@ bo_calibrate <- function(sim_fun,
   }
 
   if (progress) {
-    message("Initialising evolveBO calibration with seed = ", rng_seed)
+    message("Initialising BATON calibration with seed = ", rng_seed)
     message(sprintf("Fidelity selection method: '%s'", fidelity_method))
   }
 
@@ -599,7 +599,7 @@ bo_calibrate <- function(sim_fun,
       )
 
       # Debug output for fidelity selection (if enabled)
-      if (getOption("evolveBO.debug_fidelity", FALSE) && fidelity_method == "hybrid_staged") {
+      if (getOption("BATON.debug_fidelity", FALSE) && fidelity_method == "hybrid_staged") {
         message(sprintf("  [Fidelity Debug] iter=%d, prob_feas=%.3f, cv=%.3f, metric=%s, selected=%s",
                         iter_counter, prob_feas, cv_estimate, effective_metric, fidelity))
       }
@@ -752,7 +752,7 @@ bo_calibrate <- function(sim_fun,
       constraints = constraints,
       constraint_tbl = constraint_tbl
     ),
-    class = c("evolveBO_fit", "list")
+    class = c("BATON_fit", "list")
   )
 }
 
@@ -1509,7 +1509,7 @@ select_fidelity_adaptive <- function(prob_feasible,
   selected <- fidelity_names[best_idx]
 
   # === Diagnostics (optional) ===
-  if (getOption("evolveBO.debug_fidelity", FALSE)) {
+  if (getOption("BATON.debug_fidelity", FALSE)) {
     message(sprintf(
       "  Fidelity selection: prob_feas=%.3f, CV=%.3f, acq=%.3f, value=%.3f, cost_exp=%.2f -> %s",
       prob_feasible, cv_estimate, acq_value, value_score, cost_exponent, selected

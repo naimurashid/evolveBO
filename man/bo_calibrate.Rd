@@ -14,6 +14,7 @@ bo_calibrate(
   budget = 300,
   seed = 2025,
   initial_history = NULL,
+  init_stopping = NULL,
   fidelity_levels = c(low = 2000, med = 4000, high = 10000),
   fidelity_method = c("adaptive", "staged", "threshold", "hybrid_staged"),
   fidelity_costs = NULL,
@@ -23,6 +24,7 @@ bo_calibrate(
   candidate_pool = 2000,
   covtype = "matern5_2",
   integer_params = NULL,
+  early_stop = NULL,
   progress = TRUE,
   ...
 )
@@ -65,6 +67,24 @@ Must contain columns for all parameters in \code{bounds}, plus \code{objective},
 All rows must be within the specified \code{bounds}. This enables multi-stage
 warm-starting where later stages reuse evaluations from previous stages with
 narrowed bounds. Default: NULL (use random initialization).}
+
+\item{init_stopping}{optional list controlling GP-based initialization early
+stopping. When enabled, a Gaussian process is fit periodically during
+initialization to assess whether the design space is sufficiently explored.
+If metrics stabilize (e.g., prediction variance stops changing), initialization
+terminates early, saving budget for the BO loop. Create via
+\code{\link{init_stopping_config}()}. Key options:
+\describe{
+  \item{\code{enabled}}{Logical: enable init stopping (default: TRUE)}
+  \item{\code{min_init}}{Minimum points before checking (default: 20)}
+  \item{\code{check_every}}{Check every k points (default: 20)}
+  \item{\code{metrics}}{Metrics to track: "variance", "loo", "hyperparams",
+    "loglik" (default: "variance")}
+  \item{\code{threshold}}{Relative change threshold for convergence (default: 0.10)}
+  \item{\code{window}}{Consecutive stable checkpoints required (default: 2)}
+  \item{\code{verbose}}{Print diagnostic messages (default: FALSE)}
+}
+Default: NULL (no early stopping, use full n_init).}
 
 \item{fidelity_levels}{named numeric vector giving the number of simulator
 replications associated with each fidelity level. Default: c(low=2000, med=4000,
@@ -115,17 +135,32 @@ Larger pools in final 30\% of iterations for precision refinement.}
 \item{integer_params}{optional character vector of parameters that should be
 rounded to the nearest integer prior to simulation.}
 
+\item{early_stop}{optional list controlling early stopping based on convergence
+detection. When the objective stops improving, optimization terminates early
+to save budget. Options:
+\describe{
+  \item{\code{enabled}}{Logical: enable early stopping (default: TRUE)}
+  \item{\code{patience}}{Integer: number of BO iterations without improvement
+    before considering convergence (default: 5)}
+  \item{\code{threshold}}{Numeric: minimum relative improvement required to
+    reset patience counter (default: 1e-3 = 0.1\%)}
+  \item{\code{consecutive}}{Integer: number of consecutive patience windows
+    showing no improvement required to trigger stop (default: 2)}
+}
+Default: NULL (uses default values: patience=5, threshold=1e-3, consecutive=2).
+Set \code{early_stop = list(enabled = FALSE)} to disable early stopping entirely.}
+
 \item{progress}{logical; if `TRUE` (default) messages are emitted at key
 milestones.}
 
 \item{...}{additional arguments forwarded to `sim_fun`.}
 }
 \value{
-An object of class `evolveBO_fit` containing the optimisation history,
+An object of class `BATON_fit` containing the optimisation history,
   best design, fitted surrogates, policy configuration, and posterior draws
-  supporting sensitivity diagnostics. Note: early stopping (v0.3.0) may
-  terminate before \code{budget} is exhausted if convergence is detected
-  (no improvement > 0.01\% for 20 iterations).
+  supporting sensitivity diagnostics. Note: early stopping may terminate before
+  \code{budget} is exhausted if convergence is detected (configurable via
+  \code{early_stop} parameter, default: no improvement > 0.1\% for 5 iterations).
 }
 \description{
 Implements the methodology described in Section 2 of the manuscript:

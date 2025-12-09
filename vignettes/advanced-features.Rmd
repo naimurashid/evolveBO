@@ -1,10 +1,10 @@
 ---
-title: "Advanced Features in evolveBO (v0.3.0)"
-author: "evolveBO Development Team"
+title: "Advanced Features in BATON (v0.3.0)"
+author: "BATON Development Team"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Advanced Features in evolveBO (v0.3.0)}
+  %\VignetteIndexEntry{Advanced Features in BATON (v0.3.0)}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -20,7 +20,7 @@ knitr::opts_chunk$set(
 
 # Introduction
 
-Version 0.3.0 of evolveBO introduces major performance improvements across three implementation phases, resulting in **50-70% overall efficiency gains**. This vignette demonstrates how to use the new features and provides guidance on when to apply different strategies.
+Version 0.3.0 of BATON introduces major performance improvements across three implementation phases, resulting in **50-70% overall efficiency gains**. This vignette demonstrates how to use the new features and provides guidance on when to apply different strategies.
 
 Key improvements:
 - **Batch diversity** for parallel evaluations (10-20% fewer evaluations)
@@ -31,7 +31,7 @@ Key improvements:
 # Setup
 
 ```{r load-package, eval=FALSE}
-library(evolveBO)
+library(BATON)
 library(ggplot2)
 library(dplyr)
 ```
@@ -92,7 +92,7 @@ When selecting multiple points in a batch (`q > 1`), a naive greedy approach sel
 
 ## The Solution: Local Penalization
 
-evolveBO v0.3.0 implements **local penalization** (González et al., AISTATS 2016), which ensures batch points are spatially diverse while maintaining high acquisition values.
+BATON v0.3.0 implements **local penalization** (González et al., AISTATS 2016), which ensures batch points are spatially diverse while maintaining high acquisition values.
 
 ### How It Works
 
@@ -181,7 +181,7 @@ This ignores:
 
 ## The Solution: Cost-Aware Adaptive Selection
 
-evolveBO v0.3.0 introduces **adaptive fidelity selection**, which chooses fidelity based on expected **value per unit cost**.
+BATON v0.3.0 introduces **adaptive fidelity selection**, which chooses fidelity based on expected **value per unit cost**.
 
 ### Three Methods Available
 
@@ -525,7 +525,7 @@ fit$history %>%
 Here's a complete example using all v0.3.0 features:
 
 ```{r complete-example, eval=FALSE}
-library(evolveBO)
+library(BATON)
 
 # Define simulator with variance estimation
 my_simulator <- function(theta, fidelity = "high", seed = NULL, ...) {

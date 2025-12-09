@@ -1,4 +1,4 @@
-Package: evolveBO
+Package: BATON
 Type: Package
 Title: Bayesian Optimization for Calibration of Adaptive Clinical Trials
 Version: 0.3.0
@@ -33,8 +33,8 @@ Suggests:
     rmarkdown,
     microbenchmark
 VignetteBuilder: knitr
-URL: https://github.com/naimurashid/evolveBO
-BugReports: https://github.com/naimurashid/evolveBO/issues
+URL: https://github.com/naimurashid/BATON
+BugReports: https://github.com/naimurashid/BATON/issues
 Encoding: UTF-8
 LazyData: true
 RoxygenNote: 7.3.3

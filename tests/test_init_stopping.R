@@ -1,7 +1,7 @@
 # Test script for GP-based initialization stopping feature
 # Tests: check_init_sufficiency(), init_stopping_config(), integration with bo_calibrate()
 
-library(evolveBO)
+library(BATON)
 
 cat("=== Testing GP-Based Initialization Stopping ===\n\n")
 

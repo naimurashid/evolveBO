@@ -3,7 +3,7 @@
 # This example demonstrates how to write a simulator that returns variance
 # estimates using Welford's algorithm for memory efficiency.
 
-library(evolveBO)
+library(BATON)
 
 # =============================================================================
 # Example 1: Simple simulator using welford_mean_var
@@ -11,7 +11,7 @@ library(evolveBO)
 
 #' Adaptive trial simulator with variance
 #'
-#' This simulator uses evolveBO's welford_mean_var() helper to efficiently
+#' This simulator uses BATON's welford_mean_var() helper to efficiently
 #' compute mean and variance without storing all samples.
 #'
 #' @param theta Named list of design parameters (e.g., c(threshold = 2.0, alpha = 0.025))

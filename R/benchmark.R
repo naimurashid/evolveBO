@@ -23,7 +23,7 @@
 #'   emitted.
 #' @param ... additional arguments forwarded to `sim_fun`.
 #'
-#' @return An object of class `evolveBO_benchmark` with components `results`
+#' @return An object of class `BATON_benchmark` with components `results`
 #'   (tibble of run-level records) and `call`.
 #' @importFrom rlang .data
 #' @export
@@ -89,7 +89,7 @@ benchmark_methods <- function(sim_fun,
       results = runs,
       call = match.call()
     ),
-    class = "evolveBO_benchmark"
+    class = "BATON_benchmark"
   )
 }
 
@@ -126,7 +126,7 @@ summarise_benchmark <- function(benchmark) {
 #' @return ggplot object.
 #' @export
 plot_benchmark_trajectory <- function(benchmark) {
-  stopifnot(inherits(benchmark, "evolveBO_benchmark"))
+  stopifnot(inherits(benchmark, "BATON_benchmark"))
   history_tbl <- purrr::pmap_dfr(
     list(benchmark$results$strategy, benchmark$results$run_id, benchmark$results$history),
     function(strategy, run_id, history) {

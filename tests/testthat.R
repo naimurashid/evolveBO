@@ -1,1 +1,1 @@
-library(testthat); test_check("evolveBO")
+library(testthat); test_check("BATON")

@@ -1,4 +1,4 @@
-# evolveBO Performance Optimization Plan
+# BATON Performance Optimization Plan
 
 Based on profiling analysis (1.44s total runtime, lightweight test):
 - **76-77%** in `predict_surrogates` / `acq_eci` (GP prediction)

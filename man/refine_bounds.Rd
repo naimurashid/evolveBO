@@ -12,7 +12,7 @@ refine_bounds(
 )
 }
 \arguments{
-\item{fit}{Output from evolveBO::bo_calibrate()}
+\item{fit}{Output from BATON::bo_calibrate()}
 
 \item{shrink_factor}{Fraction to shrink bounds by (0.5 = 50% of original range)}
 
@@ -29,10 +29,10 @@ Useful for sequential refinement: coarse exploration → focused optimization.
 }
 \examples{
 \dontrun{
-fit1 <- evolveBO::bo_calibrate(...)
+fit1 <- BATON::bo_calibrate(...)
 bounds_refined <- refine_bounds(fit1, shrink_factor = 0.4)
 
-fit2 <- evolveBO::bo_calibrate(
+fit2 <- BATON::bo_calibrate(
   sim_fun = wrapper,
   bounds = bounds_refined,  # Use refined bounds
   n_init = 20,              # Fewer initial samples needed

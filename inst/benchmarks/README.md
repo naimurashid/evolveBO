@@ -1,6 +1,6 @@
-# evolveBO Benchmarking Suite
+# BATON Benchmarking Suite
 
-This directory contains scripts and utilities for benchmarking the performance improvements in evolveBO v0.3.0.
+This directory contains scripts and utilities for benchmarking the performance improvements in BATON v0.3.0.
 
 ## Overview
 
@@ -281,13 +281,13 @@ For implementation details and expected improvements, see:
 If you use these benchmarks in your research:
 
 ```bibtex
-@software{evolveBO_benchmarks,
-  title = {evolveBO Benchmarking Suite},
+@software{BATON_benchmarks,
+  title = {BATON Benchmarking Suite},
   author = {Rashid, Naim},
   year = {2025},
-  url = {https://github.com/naimurashid/evolveBO},
+  url = {https://github.com/naimurashid/BATON},
   version = {0.3.0},
-  note = {Test problems and validation scripts for evolveBO performance improvements}
+  note = {Test problems and validation scripts for BATON performance improvements}
 }
 ```
 
@@ -303,5 +303,5 @@ To contribute new test problems or benchmark scripts:
 
 ## Contact
 
-- **Issues**: [GitHub Issues](https://github.com/naimurashid/evolveBO/issues)
+- **Issues**: [GitHub Issues](https://github.com/naimurashid/BATON/issues)
 - **Author**: Naim Rashid (naim_rashid@unc.edu)

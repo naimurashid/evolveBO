@@ -6,15 +6,15 @@
 # 2. Refine parameter bounds around best designs
 # 3. Fix unimportant parameters identified by analysis
 #
-# These functions work with existing evolveBO::bo_calibrate() output and can be
-# integrated into the evolveBO package later.
+# These functions work with existing BATON::bo_calibrate() output and can be
+# integrated into the BATON package later.
 
 #' Save BO State for Warm-Starting
 #'
 #' Saves a BO fit object with all information needed to resume optimization.
 #' Includes history, surrogates (if available), and configuration.
 #'
-#' @param fit Output from evolveBO::bo_calibrate()
+#' @param fit Output from BATON::bo_calibrate()
 #' @param path File path to save (default: adds .rds extension if missing)
 #' @param compress Compression level (default: "xz" for maximum compression)
 #'
@@ -23,7 +23,7 @@
 #'
 #' @examples
 #' \dontrun{
-#' fit1 <- evolveBO::bo_calibrate(...)
+#' fit1 <- BATON::bo_calibrate(...)
 #' save_bo_state(fit1, "results/phase1_fit.rds")
 #' }
 save_bo_state <- function(fit, path, compress = "xz") {
@@ -90,7 +90,7 @@ load_bo_state <- function(path) {
 #' Shrinks parameter bounds to focus on region near the best feasible design.
 #' Useful for sequential refinement: coarse exploration → focused optimization.
 #'
-#' @param fit Output from evolveBO::bo_calibrate()
+#' @param fit Output from BATON::bo_calibrate()
 #' @param shrink_factor Fraction to shrink bounds by (0.5 = 50% of original range)
 #' @param respect_original_bounds Ensure refined bounds stay within original limits
 #' @param min_range Minimum allowed range for each parameter (prevents collapse)
@@ -100,10 +100,10 @@ load_bo_state <- function(path) {
 #'
 #' @examples
 #' \dontrun{
-#' fit1 <- evolveBO::bo_calibrate(...)
+#' fit1 <- BATON::bo_calibrate(...)
 #' bounds_refined <- refine_bounds(fit1, shrink_factor = 0.4)
 #'
-#' fit2 <- evolveBO::bo_calibrate(
+#' fit2 <- BATON::bo_calibrate(
 #'   sim_fun = wrapper,
 #'   bounds = bounds_refined,  # Use refined bounds
 #'   n_init = 20,              # Fewer initial samples needed
@@ -212,7 +212,7 @@ refine_bounds <- function(fit,
 #' bounds_reduced <- original_bounds[!names(original_bounds) %in% names(fixed_params)]
 #'
 #' # Run BO with reduced parameter space
-#' fit <- evolveBO::bo_calibrate(
+#' fit <- BATON::bo_calibrate(
 #'   sim_fun = wrapper_reduced,
 #'   bounds = bounds_reduced,
 #'   ...
@@ -317,7 +317,7 @@ sequential_refinement <- function(sim_fun,
   cat("  Budget:", coarse_budget, "evaluations\n")
   cat("  Bounds: WIDE (full parameter space)\n\n")
 
-  coarse_fit <- evolveBO::bo_calibrate(
+  coarse_fit <- BATON::bo_calibrate(
     sim_fun = sim_fun,
     bounds = bounds,
     objective = objective,
@@ -341,7 +341,7 @@ sequential_refinement <- function(sim_fun,
   cat("  Budget:", refine_budget, "evaluations\n")
   cat("  Bounds: NARROW (focused around best design)\n\n")
 
-  refined_fit <- evolveBO::bo_calibrate(
+  refined_fit <- BATON::bo_calibrate(
     sim_fun = sim_fun,
     bounds = bounds_refined,
     objective = objective,

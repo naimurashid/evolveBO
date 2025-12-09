@@ -1,6 +1,6 @@
 ---
 title: "Efficient Variance Estimation with Welford's Algorithm"
-author: "evolveBO Package Authors"
+author: "BATON Package Authors"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
 vignette: >
@@ -20,14 +20,14 @@ knitr::opts_chunk$set(
 
 # Why Variance Estimation Matters
 
-When running Bayesian optimization with evolveBO, providing **variance estimates** for your simulator outputs dramatically improves performance:
+When running Bayesian optimization with BATON, providing **variance estimates** for your simulator outputs dramatically improves performance:
 
 - **30-50% fewer evaluations** needed to converge
 - **Better uncertainty quantification** in Gaussian process surrogates
 - **Optimal exploration-exploitation trade-off** in acquisition functions
 - **Essential for multi-fidelity optimization** (distinguishing low vs high fidelity)
 
-Without variance estimates, evolveBO falls back to a homoskedastic nugget (constant noise), which:
+Without variance estimates, BATON falls back to a homoskedastic nugget (constant noise), which:
 - Underestimates uncertainty in low-fidelity evaluations
 - Can't properly balance fidelity vs exploration
 - Leads to inefficient use of simulation budget
@@ -65,7 +65,7 @@ Welford's algorithm computes mean and variance **incrementally** in a single pas
 ## How It Works
 
 ```{r}
-library(evolveBO)
+library(BATON)
 
 # Welford's algorithm in action
 set.seed(123)
@@ -239,7 +239,7 @@ print(manual_test)
 Let's compare the impact of providing variance vs using the nugget fallback:
 
 ```{r}
-library(evolveBO)
+library(BATON)
 
 # Simple test simulator
 test_sim <- function(theta, fidelity = "high", use_variance = TRUE, ...) {
@@ -287,7 +287,7 @@ print(without_var)
 cat("variance attribute:", attr(without_var, "variance"), "\n")
 ```
 
-When `variance` is `NULL`, evolveBO will:
+When `variance` is `NULL`, BATON will:
 1. Try to estimate variance using binomial formula for proportions (power)
 2. Return `NA` for continuous metrics (EN)
 3. Use a small nugget (1e-6) in GP fitting, assuming homoskedastic noise
@@ -490,7 +490,7 @@ my_sim <- function(theta, fidelity = "high", seed = NULL, ...) {
 
 # Further Reading
 
-- Main package vignette: `vignette("evolveBO-introduction")`
+- Main package vignette: `vignette("BATON-introduction")`
 - `?welford_mean_var` - Full function documentation
 - `?pool_welford_results` - Parallel pooling details
 - Examples: `inst/examples/simulator_with_variance.R`

@@ -1,4 +1,4 @@
-# evolveBO
+# BATON
 
 Bayesian Optimization for Calibration of Adaptive Clinical Trials
 
@@ -6,7 +6,7 @@ Bayesian Optimization for Calibration of Adaptive Clinical Trials
 
 <img src="man/figures/logo.png" align="left" height="340" alt="" />
 
-**evolveBO** provides a modular framework for constrained Bayesian optimization of Bayesian adaptive clinical trial designs, particularly those with time-to-event endpoints. The package implements:
+**BATON** provides a modular framework for constrained Bayesian optimization of Bayesian adaptive clinical trial designs, particularly those with time-to-event endpoints. The package implements:
 
 - **Heteroskedastic Gaussian process surrogates** for modeling operating characteristics
 - **Constraint-aware acquisition functions** (Expected Constrained Improvement)
@@ -20,18 +20,18 @@ Bayesian Optimization for Calibration of Adaptive Clinical Trials
 
 ```r
 # Install with vignettes (recommended for first-time users)
-devtools::install_github("naimurashid/evolveBO", build_vignettes = TRUE)
+devtools::install_github("naimurashid/BATON", build_vignettes = TRUE)
 
 # Or install without vignettes (faster)
-devtools::install_github("naimurashid/evolveBO")
+devtools::install_github("naimurashid/BATON")
 ```
 
 ### From Source
 
 ```r
 # Clone the repository
-git clone https://github.com/naimurashid/evolveBO.git
-cd evolveBO
+git clone https://github.com/naimurashid/BATON.git
+cd BATON
 
 # Install in R
 devtools::install()
@@ -52,7 +52,7 @@ See [Phase Summaries](#phase-improvements) for detailed documentation.
 ## Quick Start
 
 ```r
-library(evolveBO)
+library(BATON)
 
 # Define your simulator with variance estimation
 my_simulator <- function(theta, fidelity = "high", seed = NULL, ...) {
@@ -110,10 +110,10 @@ Here's a complete, copy-paste runnable example using the **evolveTrial** package
 
 ```r
 # Install packages (if needed)
-# devtools::install_github("naimurashid/evolveBO")
+# devtools::install_github("naimurashid/BATON")
 # devtools::install_github("naimurashid/evolveTrial")
 
-library(evolveBO)
+library(BATON)
 library(evolveTrial)
 
 # ─────────────────────────────────────────────────────────────
@@ -315,14 +315,14 @@ Feasible designs:  23 (38.3%)
 
 ```r
 # Main introduction
-vignette("evolveBO-introduction")
+vignette("BATON-introduction")
 
 # Detailed guide on variance estimation
 vignette("variance-estimation")
 ```
 
 If vignettes aren't available, view them on GitHub:
-- [Introduction to evolveBO](vignettes/evolveBO-introduction.Rmd)
+- [Introduction to BATON](vignettes/BATON-introduction.Rmd)
 - [Efficient Variance Estimation](vignettes/variance-estimation.Rmd)
 
 ### Function Documentation
@@ -352,7 +352,7 @@ If vignettes aren't available, view them on GitHub:
 
 ```r
 # View example simulators
-system.file("examples/simulator_with_variance.R", package = "evolveBO")
+system.file("examples/simulator_with_variance.R", package = "BATON")
 ```
 
 ## Key Features
@@ -526,14 +526,14 @@ Version 0.3.0 includes three major improvement phases:
 
 ## Citation
 
-If you use evolveBO in your research, please cite:
+If you use BATON in your research, please cite:
 
 ```bibtex
-@software{evolveBO,
-  title = {evolveBO: Bayesian Optimization for Calibration of Adaptive Clinical Trials},
+@software{BATON,
+  title = {BATON: Bayesian Optimization for Calibration of Adaptive Clinical Trials},
   author = {Rashid, Naim},
   year = {2025},
-  url = {https://github.com/naimurashid/evolveBO},
+  url = {https://github.com/naimurashid/BATON},
   version = {0.3.0}
 }
 ```
@@ -551,12 +551,12 @@ MIT License - see [LICENSE](LICENSE) file for details.
 - **Author**: Naim Rashid
 - **Email**: naim_rashid@unc.edu
 - **Affiliation**: Department of Biostatistics, UNC Chapel Hill; Lineberger Comprehensive Cancer Center
-- **Issues**: [GitHub Issues](https://github.com/naimurashid/evolveBO/issues)
+- **Issues**: [GitHub Issues](https://github.com/naimurashid/BATON/issues)
 
 ## Package Structure
 
 ```
-evolveBO/
+BATON/
 ├── R/
 │   ├── bo_calibrate.R       # Main optimization loop
 │   ├── surrogates.R         # GP surrogate model fitting
@@ -568,7 +568,7 @@ evolveBO/
 │   ├── benchmarks/          # Performance comparisons
 │   └── examples/            # Example simulators
 └── vignettes/
-    ├── evolveBO-introduction.Rmd
+    ├── BATON-introduction.Rmd
     └── variance-estimation.Rmd
 ```
 

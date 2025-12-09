@@ -8,14 +8,14 @@ test_that("compute_ei handles numerical stability edge cases", {
   sd <- c(0, 1e-12, 1)
   best <- 15
 
-  ei <- evolveBO:::compute_ei(mu, sd, best)
+  ei <- BATON:::compute_ei(mu, sd, best)
 
   # Should not have NaN or Inf values
   expect_true(all(is.finite(ei)))
   expect_true(all(ei >= 0))
 
   # Test with no feasible solution
-  ei_infeasible <- evolveBO:::compute_ei(mu, sd, Inf)
+  ei_infeasible <- BATON:::compute_ei(mu, sd, Inf)
   expect_true(all(is.finite(ei_infeasible)))
   expect_true(all(ei_infeasible > 0))  # Should use exploration
 })
@@ -47,7 +47,7 @@ test_that("compute_expected_violation returns sensible values", {
 
   metric_names <- c("power", "type1")
 
-  violations <- evolveBO:::compute_expected_violation(pred, constraint_tbl, metric_names)
+  violations <- BATON:::compute_expected_violation(pred, constraint_tbl, metric_names)
 
   # Should return numeric vector of correct length
   expect_length(violations, n_candidates)
@@ -103,7 +103,7 @@ test_that("acq_eci handles infeasible region correctly", {
   )
 
   surrogates <- tryCatch({
-    evolveBO:::fit_surrogates(history, "EN", constraint_tbl)
+    BATON:::fit_surrogates(history, "EN", constraint_tbl)
   }, error = function(e) {
     skip("Surrogate fitting failed - may be environment-specific")
   })
@@ -144,7 +144,7 @@ test_that("batch diversity mechanism selects spatially diverse points", {
 
   # Select batch with diversity
   q <- 4
-  selected_idx <- evolveBO:::select_batch_local_penalization(
+  selected_idx <- BATON:::select_batch_local_penalization(
     candidates = candidates,
     acq_scores = acq_scores,
     q = q,
@@ -198,7 +198,7 @@ test_that("compute_distances works correctly", {
 
   reference <- matrix(c(0, 0), nrow = 1)
 
-  dists <- evolveBO:::compute_distances(points, reference)
+  dists <- BATON:::compute_distances(points, reference)
 
   expect_length(dists, 4)
   expect_equal(dists[1], 0)  # Distance to self
@@ -207,7 +207,7 @@ test_that("compute_distances works correctly", {
   expect_equal(dists[4], sqrt(2), tolerance = 1e-10)  # Distance to (1,1)
 
   # Test with vector reference
-  dists2 <- evolveBO:::compute_distances(points, c(0, 0))
+  dists2 <- BATON:::compute_distances(points, c(0, 0))
   expect_equal(dists, dists2)
 })
 
@@ -234,7 +234,7 @@ test_that("estimate_lipschitz returns reasonable values", {
 
   surrogates <- list(EN = model)
 
-  L <- evolveBO:::estimate_lipschitz(surrogates, "EN")
+  L <- BATON:::estimate_lipschitz(surrogates, "EN")
 
   expect_true(is.numeric(L))
   expect_length(L, 1)
@@ -280,7 +280,7 @@ test_that("bo_calibrate uses batch diversity with q > 1", {
   })
 
   # Should complete successfully
-  expect_s3_class(fit, "evolveBO_fit")
+  expect_s3_class(fit, "BATON_fit")
   expect_equal(nrow(fit$history), 12)
 
   # Check that best solution is reasonable
@@ -321,6 +321,6 @@ test_that("batch diversity works with q=1 (no diversity needed)", {
     skip(paste("bo_calibrate failed:", e$message))
   })
 
-  expect_s3_class(fit, "evolveBO_fit")
+  expect_s3_class(fit, "BATON_fit")
   expect_equal(nrow(fit$history), 8)
 })

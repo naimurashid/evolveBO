@@ -5,7 +5,7 @@
 
 suppressPackageStartupMessages({
   if (!requireNamespace("pkgload", quietly = TRUE)) {
-    stop("pkgload is required to load evolveBO for benchmarking.")
+    stop("pkgload is required to load BATON for benchmarking.")
   }
   pkgload::load_all(quiet = TRUE)
 })

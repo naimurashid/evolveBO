@@ -1,4 +1,4 @@
-# Standard Test Problems for Benchmarking evolveBO
+# Standard Test Problems for Benchmarking BATON
 #
 # This file defines three test problems for validating performance improvements:
 # 1. toy_2d: Simple 2D problem for quick validation
@@ -8,7 +8,7 @@
 # All problems use synthetic simulators that mimic clinical trial calibration
 # characteristics (power, type I error, sample size metrics).
 
-library(evolveBO)
+library(BATON)
 
 #' Simple 2D Test Problem
 #'

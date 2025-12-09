@@ -1,6 +1,6 @@
 # Benchmark: Compare v0.2.0 vs v0.3.0 Behavior
 #
-# This script compares the performance of evolveBO v0.2.0 (baseline) vs v0.3.0
+# This script compares the performance of BATON v0.2.0 (baseline) vs v0.3.0
 # (with all improvements) across multiple test problems.
 #
 # v0.2.0 equivalent configuration:
@@ -21,7 +21,7 @@
 #   - 30-60% faster wall-clock time (warm-start + adaptive pool + early stop)
 #   - Similar or better final objective values (no regression)
 
-library(evolveBO)
+library(BATON)
 library(tictoc)
 library(dplyr)
 library(ggplot2)
@@ -143,7 +143,7 @@ run_benchmark_suite <- function(problems = get_test_problems(),
                                  save_results = TRUE) {
 
   cat("\n======================================\n")
-  cat("  evolveBO v0.2.0 vs v0.3.0 Benchmark\n")
+  cat("  BATON v0.2.0 vs v0.3.0 Benchmark\n")
   cat("======================================\n")
   cat(sprintf("Problems: %d\n", length(problems)))
   cat(sprintf("Seeds: %d\n", length(seeds)))

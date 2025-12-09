@@ -40,7 +40,7 @@ test_that("bo_calibrate returns expected structure", {
     budget = 8,
     progress = FALSE
   )
-  expect_s3_class(fit, "evolveBO_fit")
+  expect_s3_class(fit, "BATON_fit")
   expect_equal(nrow(fit$history), 8)
   expect_true(is.list(fit$best_theta))
   expect_true(length(fit$surrogates) >= 1)
@@ -58,7 +58,7 @@ test_that("benchmark, reliability, and ablation helpers run", {
     simulators_per_eval = list(random = 500),
     progress = FALSE
   )
-  expect_s3_class(bench, "evolveBO_benchmark")
+  expect_s3_class(bench, "BATON_benchmark")
   summary_tbl <- summarise_benchmark(bench)
   expect_true(nrow(summary_tbl) >= 1)
 
@@ -73,7 +73,7 @@ test_that("benchmark, reliability, and ablation helpers run", {
     bo_args = list(n_init = 3, q = 1, budget = 5, progress = FALSE),
     progress = FALSE
   )
-  expect_s3_class(reliability, "evolveBO_reliability")
+  expect_s3_class(reliability, "BATON_reliability")
   expect_true(nrow(reliability$summary) == 1)
 
   ablation <- ablation_multifidelity(
@@ -86,7 +86,7 @@ test_that("benchmark, reliability, and ablation helpers run", {
     bo_args = list(n_init = 3, q = 1, budget = 5, progress = FALSE),
     progress = FALSE
   )
-  expect_s3_class(ablation, "evolveBO_multifidelity")
+  expect_s3_class(ablation, "BATON_multifidelity")
   expect_true(nrow(ablation$summary) == 2)
 })
 

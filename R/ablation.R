@@ -9,7 +9,7 @@
 #'   [bo_calibrate()]).
 #' @param seeds integer vector of seeds used for each replicate.
 #'
-#' @return Object of class `evolveBO_multifidelity` containing `runs` (per-policy
+#' @return Object of class `BATON_multifidelity` containing `runs` (per-policy
 #'   records) and `summary` (policy-level averages).
 #' @importFrom rlang .data
 #' @export
@@ -80,7 +80,7 @@ ablation_multifidelity <- function(sim_fun,
       summary = summary_tbl,
       call = match.call()
     ),
-    class = "evolveBO_multifidelity"
+    class = "BATON_multifidelity"
   )
 }
 
@@ -89,7 +89,7 @@ ablation_multifidelity <- function(sim_fun,
 #' @return ggplot object.
 #' @export
 plot_multifidelity_tradeoff <- function(ablation) {
-  stopifnot(inherits(ablation, "evolveBO_multifidelity"))
+  stopifnot(inherits(ablation, "BATON_multifidelity"))
   ggplot2::ggplot(ablation$summary, ggplot2::aes(x = .data$sim_calls_mean, y = .data$objective_mean, colour = .data$policy)) +
     ggplot2::geom_point(size = 3) +
     ggplot2::geom_errorbarh(ggplot2::aes(xmin = .data$sim_calls_mean - .data$sim_calls_sd,

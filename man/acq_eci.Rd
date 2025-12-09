@@ -4,7 +4,15 @@
 \alias{acq_eci}
 \title{Expected constrained improvement acquisition function}
 \usage{
-acq_eci(unit_x, surrogates, constraint_tbl, objective, best_feasible)
+acq_eci(
+  unit_x,
+  surrogates,
+  constraint_tbl,
+  objective,
+  best_feasible,
+  pred = NULL,
+  prob_feas = NULL
+)
 }
 \arguments{
 \item{unit_x}{list of candidate points on the unit hypercube.}
@@ -17,6 +25,12 @@ acq_eci(unit_x, surrogates, constraint_tbl, objective, best_feasible)
 
 \item{best_feasible}{best observed value of the objective among feasible points
 (numeric scalar or `Inf` if none observed).}
+
+\item{pred}{optional list of surrogate predictions (as from [predict_surrogates()]).
+When supplied, avoids recomputing GP predictions for acquisition scoring.}
+
+\item{prob_feas}{optional vector of feasibility probabilities aligned with `unit_x`.
+If NULL, computed internally from `pred` and `constraint_tbl`.}
 }
 \value{
 numeric vector of acquisition scores for each candidate.

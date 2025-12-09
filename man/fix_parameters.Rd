@@ -33,7 +33,7 @@ wrapper_reduced <- fix_parameters(
 bounds_reduced <- original_bounds[!names(original_bounds) \%in\% names(fixed_params)]
 
 # Run BO with reduced parameter space
-fit <- evolveBO::bo_calibrate(
+fit <- BATON::bo_calibrate(
   sim_fun = wrapper_reduced,
   bounds = bounds_reduced,
   ...

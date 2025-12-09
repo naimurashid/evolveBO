@@ -7,7 +7,7 @@ test_that("select_fidelity_method dispatcher works correctly", {
   fidelity_costs <- c(low = 1, med = 5, high = 50)
 
   # Test staged method (requires: prob, cv, iter, levels)
-  fid_staged <- evolveBO:::select_fidelity_method(
+  fid_staged <- BATON:::select_fidelity_method(
     method = "staged",
     prob_feasible = 0.5,
     cv_estimate = 0.2,
@@ -17,7 +17,7 @@ test_that("select_fidelity_method dispatcher works correctly", {
   expect_true(fid_staged %in% names(fidelity_levels))
 
   # Test threshold method (requires: prob, levels)
-  fid_threshold <- evolveBO:::select_fidelity_method(
+  fid_threshold <- BATON:::select_fidelity_method(
     method = "threshold",
     prob_feasible = 0.8,
     fidelity_levels = fidelity_levels
@@ -25,7 +25,7 @@ test_that("select_fidelity_method dispatcher works correctly", {
   expect_true(fid_threshold %in% names(fidelity_levels))
 
   # Test adaptive method (requires all parameters)
-  fid_adaptive <- evolveBO:::select_fidelity_method(
+  fid_adaptive <- BATON:::select_fidelity_method(
     method = "adaptive",
     prob_feasible = 0.5,
     cv_estimate = 0.2,
@@ -41,7 +41,7 @@ test_that("select_fidelity_method dispatcher works correctly", {
 
   # Test invalid method
   expect_error(
-    evolveBO:::select_fidelity_method(
+    BATON:::select_fidelity_method(
       method = "invalid",
       prob_feasible = 0.5
     ),
@@ -59,7 +59,7 @@ test_that("select_fidelity_adaptive responds to cost-benefit tradeoff", {
   # Should sometimes use low (exploration) but also use high when value is high
   set.seed(42)
   selections <- replicate(20, {
-    evolveBO:::select_fidelity_adaptive(
+    BATON:::select_fidelity_adaptive(
       prob_feasible = 0.5,  # Boundary (high value)
       cv_estimate = 0.3,    # High uncertainty (high value)
       acq_value = 2.0,      # High acquisition (high value)
@@ -82,7 +82,7 @@ test_that("select_fidelity_adaptive responds to cost-benefit tradeoff", {
   # Should prefer low fidelity (not worth the cost)
   set.seed(42)
   selections2 <- replicate(20, {
-    evolveBO:::select_fidelity_adaptive(
+    BATON:::select_fidelity_adaptive(
       prob_feasible = 0.95,  # Far from boundary (low value)
       cv_estimate = 0.05,     # Low uncertainty (low value)
       acq_value = 0.1,        # Low acquisition (low value)
@@ -103,7 +103,7 @@ test_that("select_fidelity_adaptive responds to cost-benefit tradeoff", {
   # (less exploration randomness)
   set.seed(42)
   selections3 <- replicate(20, {
-    evolveBO:::select_fidelity_adaptive(
+    BATON:::select_fidelity_adaptive(
       prob_feasible = 0.5,
       cv_estimate = 0.25,
       acq_value = 1.5,
@@ -128,7 +128,7 @@ test_that("select_fidelity_adaptive handles edge cases", {
   skip_on_cran()
 
   # Single fidelity level - should return it
-  single_fid <- evolveBO:::select_fidelity_adaptive(
+  single_fid <- BATON:::select_fidelity_adaptive(
     prob_feasible = 0.5,
     cv_estimate = 0.2,
     acq_value = 1.0,
@@ -142,7 +142,7 @@ test_that("select_fidelity_adaptive handles edge cases", {
   expect_equal(single_fid, "med")
 
   # Extreme values
-  fid_extreme <- evolveBO:::select_fidelity_adaptive(
+  fid_extreme <- BATON:::select_fidelity_adaptive(
     prob_feasible = 1.0,  # Max feasibility
     cv_estimate = 0,      # Zero uncertainty
     acq_value = 0,        # Zero acquisition
@@ -158,7 +158,7 @@ test_that("select_fidelity_adaptive handles edge cases", {
   # Budget nearly depleted - should be more cost-sensitive
   set.seed(42)
   selections_depleted <- replicate(10, {
-    evolveBO:::select_fidelity_adaptive(
+    BATON:::select_fidelity_adaptive(
       prob_feasible = 0.5,
       cv_estimate = 0.2,
       acq_value = 1.0,
@@ -213,7 +213,7 @@ test_that("bo_calibrate works with different fidelity methods", {
     skip(paste("bo_calibrate with adaptive failed:", e$message))
   })
 
-  expect_s3_class(fit_adaptive, "evolveBO_fit")
+  expect_s3_class(fit_adaptive, "BATON_fit")
   expect_equal(nrow(fit_adaptive$history), 12)
   expect_equal(fit_adaptive$policies$fidelity_method, "adaptive")
 
@@ -235,7 +235,7 @@ test_that("bo_calibrate works with different fidelity methods", {
     skip(paste("bo_calibrate with staged failed:", e$message))
   })
 
-  expect_s3_class(fit_staged, "evolveBO_fit")
+  expect_s3_class(fit_staged, "BATON_fit")
   expect_equal(fit_staged$policies$fidelity_method, "staged")
 
   # Test threshold method
@@ -256,7 +256,7 @@ test_that("bo_calibrate works with different fidelity methods", {
     skip(paste("bo_calibrate with threshold failed:", e$message))
   })
 
-  expect_s3_class(fit_threshold, "evolveBO_fit")
+  expect_s3_class(fit_threshold, "BATON_fit")
   expect_equal(fit_threshold$policies$fidelity_method, "threshold")
 })
 
@@ -297,7 +297,7 @@ test_that("custom fidelity costs are respected", {
     skip(paste("bo_calibrate with custom costs failed:", e$message))
   })
 
-  expect_s3_class(fit_custom, "evolveBO_fit")
+  expect_s3_class(fit_custom, "BATON_fit")
   expect_equal(fit_custom$policies$fidelity_costs, custom_costs)
 })
 
@@ -310,7 +310,7 @@ test_that("fidelity selection uses acquisition value correctly", {
   # High acquisition value should increase likelihood of high fidelity
   set.seed(42)
   selections_high_acq <- replicate(20, {
-    evolveBO:::select_fidelity_adaptive(
+    BATON:::select_fidelity_adaptive(
       prob_feasible = 0.5,
       cv_estimate = 0.2,
       acq_value = 10.0,  # Very high acquisition
@@ -326,7 +326,7 @@ test_that("fidelity selection uses acquisition value correctly", {
   # Low acquisition value should favor low fidelity
   set.seed(42)
   selections_low_acq <- replicate(20, {
-    evolveBO:::select_fidelity_adaptive(
+    BATON:::select_fidelity_adaptive(
       prob_feasible = 0.5,
       cv_estimate = 0.2,
       acq_value = 0.01,  # Very low acquisition
@@ -356,7 +356,7 @@ test_that("exploration probability decays with iteration", {
   # Early iterations: more randomization (exploration)
   set.seed(42)
   selections_early <- replicate(30, {
-    evolveBO:::select_fidelity_adaptive(
+    BATON:::select_fidelity_adaptive(
       prob_feasible = 0.5,
       cv_estimate = 0.2,
       acq_value = 1.0,
@@ -372,7 +372,7 @@ test_that("exploration probability decays with iteration", {
   # Late iterations: less randomization (exploitation)
   set.seed(42)
   selections_late <- replicate(30, {
-    evolveBO:::select_fidelity_adaptive(
+    BATON:::select_fidelity_adaptive(
       prob_feasible = 0.5,
       cv_estimate = 0.2,
       acq_value = 1.0,

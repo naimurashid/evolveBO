@@ -10,7 +10,7 @@
 #' @param validation_reps number of simulator replications used when validating
 #'   a calibrated design (passed to `sim_fun` via the `n_rep` argument).
 #'
-#' @return An object of class `evolveBO_reliability` with components `summary`
+#' @return An object of class `BATON_reliability` with components `summary`
 #'   (strategy-level feasibility rates) and `runs` (per-run records).
 #' @importFrom rlang .data
 #' @export
@@ -102,7 +102,7 @@ estimate_constraint_reliability <- function(sim_fun,
       runs = runs,
       call = match.call()
     ),
-    class = "evolveBO_reliability"
+    class = "BATON_reliability"
   )
 }
 
@@ -111,7 +111,7 @@ estimate_constraint_reliability <- function(sim_fun,
 #' @return ggplot object visualising feasibility rates.
 #' @export
 plot_constraint_reliability <- function(reliability) {
-  stopifnot(inherits(reliability, "evolveBO_reliability"))
+  stopifnot(inherits(reliability, "BATON_reliability"))
   ggplot2::ggplot(reliability$summary, ggplot2::aes(x = .data$strategy, y = .data$reliability, fill = .data$strategy)) +
     ggplot2::geom_col(width = 0.6) +
     ggplot2::geom_text(ggplot2::aes(label = sprintf("%.1f%%", .data$reliability * 100)), vjust = -0.4, size = 3) +

@@ -1,7 +1,7 @@
 # Ablation Study: Multi-Fidelity Selection Strategies
 #
 # This script performs an ablation study comparing different fidelity selection
-# methods implemented in evolveBO v0.3.0:
+# methods implemented in BATON v0.3.0:
 #
 # 1. adaptive: Cost-aware value-per-cost optimization (NEW, recommended)
 # 2. staged: Fixed iteration thresholds (EXISTING)
@@ -15,7 +15,7 @@
 # - Is the cost-awareness worth the complexity?
 # - How does performance vary across problem characteristics?
 
-library(evolveBO)
+library(BATON)
 library(dplyr)
 library(ggplot2)
 library(tidyr)

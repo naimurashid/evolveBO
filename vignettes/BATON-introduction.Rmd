@@ -1,10 +1,10 @@
 ---
-title: "Introduction to evolveBO: Bayesian Optimization for Clinical Trial Calibration"
-author: "evolveBO Package Authors"
+title: "Introduction to BATON: Bayesian Optimization for Clinical Trial Calibration"
+author: "BATON Package Authors"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Introduction to evolveBO}
+  %\VignetteIndexEntry{Introduction to BATON}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -20,7 +20,7 @@ knitr::opts_chunk$set(
 
 # Overview
 
-The **evolveBO** package provides a modular framework for constrained Bayesian optimization of Bayesian adaptive clinical trial designs. It implements:
+The **BATON** package provides a modular framework for constrained Bayesian optimization of Bayesian adaptive clinical trial designs. It implements:
 
 - **Heteroskedastic Gaussian process surrogates** for modeling operating characteristics
 - **Constraint-aware acquisition functions** (Expected Constrained Improvement)
@@ -31,11 +31,11 @@ The **evolveBO** package provides a modular framework for constrained Bayesian o
 
 ```{r eval=FALSE}
 # Install from GitHub
-devtools::install_github("naimurashid/evolveBO")
+devtools::install_github("naimurashid/BATON")
 ```
 
 ```{r}
-library(evolveBO)
+library(BATON)
 ```
 
 # Quick Start Example
@@ -286,7 +286,7 @@ parallel_simulator <- function(theta, fidelity = "high", n_cores = 4, ...) {
 
 # Multi-Fidelity Optimization
 
-evolveBO automatically manages multi-fidelity evaluations to maximize efficiency:
+BATON automatically manages multi-fidelity evaluations to maximize efficiency:
 
 ## How It Works
 

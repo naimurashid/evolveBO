@@ -1,6 +1,6 @@
 
-# Example of evolveBO API
-library(evolveBO)
+# Example of BATON API
+library(BATON)
 sim_fun <- function(theta, fidelity=c("low","high")) {
   c(power=0.85, type1=0.08, EN=150, ET=20)
 }

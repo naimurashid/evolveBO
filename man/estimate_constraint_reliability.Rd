@@ -60,7 +60,7 @@ emitted.}
 \item{...}{additional arguments forwarded to `sim_fun`.}
 }
 \value{
-An object of class `evolveBO_reliability` with components `summary`
+An object of class `BATON_reliability` with components `summary`
   (strategy-level feasibility rates) and `runs` (per-run records).
 }
 \description{

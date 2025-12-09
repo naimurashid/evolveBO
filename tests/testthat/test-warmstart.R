@@ -340,7 +340,7 @@ test_that("save_bo_state creates compressed file", {
 
   # Should be loadable
   fit_loaded <- readRDS(temp_file)
-  expect_s3_class(fit_loaded, "evolveBO_fit")
+  expect_s3_class(fit_loaded, "BATON_fit")
 
   unlink(temp_file)
 })

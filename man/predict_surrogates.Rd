@@ -8,5 +8,6 @@ predict_surrogates(surrogates, unit_x)
 }
 \description{
 Handles both DiceKriging::km and hetGP::hetGP model objects.
+Optimized for batch prediction with minimal data frame overhead.
 }
 \keyword{internal}

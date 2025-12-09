@@ -44,7 +44,7 @@ emitted.}
 \item{...}{additional arguments forwarded to `sim_fun`.}
 }
 \value{
-Object of class `evolveBO_multifidelity` containing `runs` (per-policy
+Object of class `BATON_multifidelity` containing `runs` (per-policy
   records) and `summary` (policy-level averages).
 }
 \description{

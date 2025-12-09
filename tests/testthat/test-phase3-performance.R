@@ -22,7 +22,7 @@ test_that("extract_gp_hyperparams works with DiceKriging models", {
   })
 
   # Extract hyperparameters
-  theta <- evolveBO:::extract_gp_hyperparams(model)
+  theta <- BATON:::extract_gp_hyperparams(model)
 
   expect_true(is.numeric(theta))
   expect_true(all(is.finite(theta)))
@@ -34,11 +34,11 @@ test_that("extract_gp_hyperparams handles NULL and invalid models", {
   skip_on_cran()
 
   # NULL model
-  theta_null <- evolveBO:::extract_gp_hyperparams(NULL)
+  theta_null <- BATON:::extract_gp_hyperparams(NULL)
   expect_null(theta_null)
 
   # Invalid model
-  theta_invalid <- evolveBO:::extract_gp_hyperparams(list(not_a_model = 1))
+  theta_invalid <- BATON:::extract_gp_hyperparams(list(not_a_model = 1))
   expect_null(theta_invalid)
 })
 
@@ -84,7 +84,7 @@ test_that("fit_surrogates uses warm-start when prev_surrogates provided", {
 
   # Fit initial surrogates
   surrogates1 <- tryCatch({
-    evolveBO:::fit_surrogates(history, "EN", constraint_tbl)
+    BATON:::fit_surrogates(history, "EN", constraint_tbl)
   }, error = function(e) {
     skip(paste("Initial surrogate fitting failed:", e$message))
   })
@@ -100,7 +100,7 @@ test_that("fit_surrogates uses warm-start when prev_surrogates provided", {
 
   # Fit with warm-start
   surrogates2 <- tryCatch({
-    evolveBO:::fit_surrogates(history2, "EN", constraint_tbl,
+    BATON:::fit_surrogates(history2, "EN", constraint_tbl,
                              prev_surrogates = surrogates1)
   }, error = function(e) {
     skip(paste("Warm-start surrogate fitting failed:", e$message))
@@ -148,7 +148,7 @@ test_that("adaptive candidate pool size scales with dimension", {
     skip(paste("2D bo_calibrate failed:", e$message))
   })
 
-  expect_s3_class(fit_2d, "evolveBO_fit")
+  expect_s3_class(fit_2d, "BATON_fit")
   expect_equal(nrow(fit_2d$history), 6)
 
   # Test 5D problem (should use larger pool)
@@ -178,7 +178,7 @@ test_that("adaptive candidate pool size scales with dimension", {
     skip(paste("5D bo_calibrate failed:", e$message))
   })
 
-  expect_s3_class(fit_5d, "evolveBO_fit")
+  expect_s3_class(fit_5d, "BATON_fit")
   # Pool size should be larger for higher dimensions (tested via code inspection)
 })
 
@@ -221,7 +221,7 @@ test_that("early stopping triggers when no improvement", {
     skip(paste("bo_calibrate failed:", e$message))
   })
 
-  expect_s3_class(fit, "evolveBO_fit")
+  expect_s3_class(fit, "BATON_fit")
 
   # Should stop before budget exhausted (early stopping)
   expect_lt(nrow(fit$history), 100)
@@ -270,7 +270,7 @@ test_that("early stopping criterion: acquisition values", {
     skip(paste("bo_calibrate failed:", e$message))
   })
 
-  expect_s3_class(fit, "evolveBO_fit")
+  expect_s3_class(fit, "BATON_fit")
 
   # Should stop before budget (acquisition values near zero)
   expect_lte(nrow(fit$history), 30)
@@ -312,12 +312,12 @@ test_that("warm-start improves fitting time", {
 
   # Time without warm-start
   time1 <- system.time({
-    surrogates1 <- evolveBO:::fit_surrogates(history, "EN", constraint_tbl)
+    surrogates1 <- BATON:::fit_surrogates(history, "EN", constraint_tbl)
   })
 
   # Time with warm-start (should be faster)
   time2 <- system.time({
-    surrogates2 <- evolveBO:::fit_surrogates(history, "EN", constraint_tbl,
+    surrogates2 <- BATON:::fit_surrogates(history, "EN", constraint_tbl,
                                             prev_surrogates = surrogates1)
   })
 
@@ -367,7 +367,7 @@ test_that("Phase 3 features work together", {
   })
 
   # Should complete successfully
-  expect_s3_class(fit, "evolveBO_fit")
+  expect_s3_class(fit, "BATON_fit")
 
   # Should have reasonable results
   expect_lte(nrow(fit$history), 40)  # May stop early

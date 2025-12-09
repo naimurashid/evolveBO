@@ -7,7 +7,7 @@
 save_bo_state(fit, path, compress = "xz")
 }
 \arguments{
-\item{fit}{Output from evolveBO::bo_calibrate()}
+\item{fit}{Output from BATON::bo_calibrate()}
 
 \item{path}{File path to save (default: adds .rds extension if missing)}
 
@@ -22,7 +22,7 @@ Includes history, surrogates (if available), and configuration.
 }
 \examples{
 \dontrun{
-fit1 <- evolveBO::bo_calibrate(...)
+fit1 <- BATON::bo_calibrate(...)
 save_bo_state(fit1, "results/phase1_fit.rds")
 }
 }

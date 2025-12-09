@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Package Overview
 
-evolveBO is an R package for Bayesian optimization of Bayesian adaptive clinical trial designs. It implements constrained optimization using heteroskedastic Gaussian process surrogates, constraint-aware acquisition functions (Expected Constrained Improvement), and multi-fidelity simulation budgeting.
+BATON is an R package for Bayesian optimization of Bayesian adaptive clinical trial designs. It implements constrained optimization using heteroskedastic Gaussian process surrogates, constraint-aware acquisition functions (Expected Constrained Improvement), and multi-fidelity simulation budgeting.
 
 ## What's New in v0.3.0
 
@@ -57,13 +57,13 @@ devtools::load_all()  # Load package for development
 ### Testing
 ```r
 # Run all tests
-testthat::test_check("evolveBO")
+testthat::test_check("BATON")
 
 # Run tests interactively
 devtools::test()
 
 # Run specific test file
-testthat::test_file("tests/testthat/test-evolveBO-core.R")
+testthat::test_file("tests/testthat/test-BATON-core.R")
 ```
 
 ### Checking Package
@@ -101,7 +101,7 @@ The `bo_calibrate()` function orchestrates the complete Bayesian optimization lo
    - **Evaluate and record**: Execute simulations and update history
    - **Check convergence** (v0.3.0): Early stopping if improvement < 0.1% for 5 iterations (configurable via `early_stop` parameter)
 
-**Returns**: `evolveBO_fit` object containing:
+**Returns**: `BATON_fit` object containing:
 - `history`: tibble of all evaluations
 - `best_theta`: optimal design parameters
 - `surrogates`: fitted GP models
@@ -291,6 +291,6 @@ bo_calibrate(...,
 3. Update tests to cover new surrogate option
 
 ### Testing Workflow
-- Use `toy_sim_fun` in tests/testthat/test-evolveBO-core.R as template for simple test cases
+- Use `toy_sim_fun` in tests/testthat/test-BATON-core.R as template for simple test cases
 - Keep test budgets small (budget ≤ 10) to ensure fast execution
 - Mark tests with `skip_on_cran()` if they require external packages or are slow
