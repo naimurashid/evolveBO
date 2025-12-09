@@ -1,8 +1,8 @@
-evolveBO <img src="man/figures/logo.png" align="right" height="120" alt="" />
-
 # evolveBO
 
 Bayesian Optimization for Calibration of Adaptive Clinical Trials
+
+<img src="man/figures/logo.png" align="right" height="120" alt="" />
 
 ## Overview
 
