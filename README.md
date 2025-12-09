@@ -2,9 +2,9 @@
 
 Bayesian Optimization for Calibration of Adaptive Clinical Trials
 
-<img src="man/figures/logo.png" align="left" height="120" alt="" />
-
 ## Overview
+
+<img src="man/figures/logo.png" align="left" height="120" alt="" />
 
 **evolveBO** provides a modular framework for constrained Bayesian optimization of Bayesian adaptive clinical trial designs, particularly those with time-to-event endpoints. The package implements:
 
