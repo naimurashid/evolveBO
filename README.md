@@ -93,7 +93,7 @@ fit <- bo_calibrate(
   objective = "EN",  # Minimize expected sample size
   constraints = constraints,
   n_init = 10,
-  q = 4,  # Batch size (uses diversity mechanism)
+  q = 2,  # Batch size
   budget = 50,
   fidelity_method = "adaptive",  # NEW: Cost-aware fidelity (default)
   seed = 2025
@@ -255,7 +255,7 @@ fit <- bo_calibrate(
   objective = "EN",        # Minimize expected sample size
   constraints = constraints,
   n_init = 20,             # Initial space-filling designs
-  q = 4,                   # Batch size (parallel evaluations)
+  q = 2,                   # Batch size
   budget = 60,             # Total evaluation budget
   fidelity_levels = c(low = 200, med = 500, high = 2000),
   fidelity_costs = c(low = 1, med = 2.5, high = 10),
@@ -366,8 +366,8 @@ Select diverse batches using **local penalization** for parallel evaluations:
 - Automatically applied when `q > 1`
 
 ```r
-# Batch of 4 diverse points selected intelligently
-fit <- bo_calibrate(..., q = 4)
+# Batch of 2 points selected per iteration
+fit <- bo_calibrate(..., q = 2)
 ```
 
 ### 🎯 Adaptive Fidelity Selection (NEW in v0.3.0)
@@ -583,7 +583,7 @@ BATON/
 - Use `welford_mean_var()` in your simulators (30-50% performance gain!)
 - Provide variance estimates for all metrics
 - Use `fidelity_method = "adaptive"` (default in v0.3.0) for best performance
-- Set `q = 4` or higher to leverage batch diversity
+- Use `q = 2` for sequential optimization (recommended without parallelization)
 - Specify `fidelity_costs` if your simulator has non-linear cost scaling
 - Start with reasonable initial design size (4-5 × number of parameters)
 - Validate results with `estimate_constraint_reliability()`
@@ -592,7 +592,7 @@ BATON/
 ⚠️ **AVOID**:
 - Skipping variance estimation (significant performance loss)
 - Using `fidelity_method = "staged"` unless you need simple fixed thresholds
-- Setting `q = 1` when you can evaluate in parallel (misses diversity benefits)
+- Setting large `q` without parallel evaluation capability (loses information gain)
 - Too small initial design (< 2 × number of parameters)
 - Ignoring infeasibility warnings
 - Using nugget fallback for production work

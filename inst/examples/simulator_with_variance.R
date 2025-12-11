@@ -222,7 +222,7 @@ if (interactive()) {
     objective = objective,
     constraints = constraints,
     n_init = 10,
-    q = 4,
+    q = 2,
     budget = 50,
     seed = 2025
   )

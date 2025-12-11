@@ -113,7 +113,7 @@ fit <- bo_calibrate(
   objective = "EN",
   constraints = constraints,
   n_init = 10,
-  q = 4,  # Batch of 4 points - diversity applied automatically
+  q = 2,  # Batch of 2 points per iteration
   budget = 40,
   seed = 2025
 )
@@ -147,15 +147,15 @@ ggplot(first_batches, aes(x = theta[[1]]$threshold, y = theta[[1]]$alpha)) +
 
 ### When to Use
 
-- **Use batch diversity** (`q > 1`) when:
-  - You can evaluate multiple designs in parallel
-  - You want to explore multiple regions simultaneously
-  - You have sufficient computational resources
+- **Use small batch** (`q = 2`) when:
+  - Evaluations cannot be parallelized (recommended default)
+  - You want maximum information gain per evaluation
+  - Sequential execution is required
 
-- **Use sequential** (`q = 1`) when:
-  - Evaluations must be strictly sequential
-  - Very limited computational budget
-  - Problem is low-dimensional (d ≤ 2)
+- **Use larger batch** (`q > 2`) when:
+  - You can evaluate multiple designs in parallel
+  - Wall-clock time is more important than evaluation efficiency
+  - You have sufficient computational resources
 
 ### Impact
 
@@ -566,7 +566,7 @@ fit <- bo_calibrate(
 
   # v0.3.0 Features (all automatic)
   n_init = 10,
-  q = 4,  # Batch diversity
+  q = 2,  # Batch size
   budget = 50,  # Early stopping may use less
   fidelity_method = "adaptive",  # Cost-aware fidelity
 
@@ -650,7 +650,7 @@ fit_new <- bo_calibrate(
   objective = "EN",
   constraints = constraints,
   fidelity_method = "adaptive",
-  q = 4,  # Batch diversity
+  q = 2,  # Batch size
   budget = 100  # May stop early
 )
 time_new <- toc()
@@ -688,7 +688,7 @@ message(sprintf(
 
 1. **Don't skip variance estimation** (significant performance loss)
 2. **Don't use staged method** unless you specifically need iteration thresholds
-3. **Don't set q = 1** when you can evaluate in parallel (misses diversity benefits)
+3. **Don't set large q** without parallel evaluation capability (loses information gain)
 4. **Don't use too small initial design** (< 2 × dimension)
 5. **Don't ignore infeasibility warnings**
 6. **Don't assume linear cost scaling** - measure and specify `fidelity_costs` if needed

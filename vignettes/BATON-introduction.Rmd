@@ -147,7 +147,7 @@ fit <- bo_calibrate(
   objective = objective,
   constraints = constraints,
   n_init = 10,      # Initial LHS design points
-  q = 4,            # Batch size per iteration
+  q = 2,            # Batch size per iteration
   budget = 30,      # Total evaluations
   seed = 2025
 )
@@ -335,7 +335,7 @@ benchmark <- benchmark_methods(
   objective = objective,
   constraints = constraints,
   strategies = c("bo", "random", "grid"),
-  bo_args = list(n_init = 10, q = 4, budget = 30, seeds = 1:3),
+  bo_args = list(n_init = 10, q = 2, budget = 30, seeds = 1:3),
   random_args = list(n_samples = 30, seeds = 1:3),
   grid_args = list(resolution = list(threshold = 5, alpha = 5))
 )

@@ -112,7 +112,7 @@ results_ablation <- run_ablation_study(
   problems = get_test_problems(),
   seeds = 1:20,
   n_init = 10,
-  q = 4,
+  q = 2,
   budget = 50,
   save_results = TRUE
 )
