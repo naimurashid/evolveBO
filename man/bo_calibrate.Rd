@@ -10,7 +10,7 @@ bo_calibrate(
   objective,
   constraints,
   n_init = 90,
-  q = 8,
+  q = 2,
   budget = 300,
   seed = 2025,
   initial_history = NULL,

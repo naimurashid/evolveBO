@@ -1317,9 +1317,18 @@ select_fidelity_hybrid_staged <- function(prob_feasible,
   fidelity_names[1]
 }
 
+#' Select fidelity level using staged strategy
+#'
+#' Internal function for staged fidelity selection based on iteration count.
+#'
+#' @param prob_feasible probability of feasibility from surrogate
 #' @param cv_estimate coefficient of variation from surrogate
 #' @param iter current iteration number
 #' @param fidelity_levels named vector of fidelity levels
+#' @param cv_threshold CV threshold for fidelity promotion
+#' @param prob_range probability range for medium fidelity
+#' @param ... additional arguments (ignored)
+#' @return character string indicating selected fidelity level
 #' @keywords internal
 select_fidelity_staged <- function(prob_feasible, cv_estimate, iter, fidelity_levels,
                                    cv_threshold = 0.05, prob_range = c(0.2, 0.8), ...) {
