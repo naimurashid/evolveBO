@@ -81,29 +81,8 @@ coerce_theta_types <- function(theta, integer_params = NULL) {
   result
 }
 
-#' Ensure bounds are valid numeric intervals
-#' @keywords internal
-validate_bounds <- function(bounds) {
-  if (!is.list(bounds)) {
-    stop("`bounds` must be a named list.", call. = FALSE)
-  }
-  if (is.null(names(bounds)) || any(names(bounds) == "")) {
-    stop("`bounds` must have names.", call. = FALSE)
-  }
-  # Use base R for loop instead of purrr::walk
-  for (rng in bounds) {
-    if (length(rng) != 2L) {
-      stop("Each bound entry must have length 2.", call. = FALSE)
-    }
-    if (!is.numeric(rng)) {
-      stop("Bounds must be numeric.", call. = FALSE)
-    }
-    if (rng[[1]] >= rng[[2]]) {
-      stop("Lower bound must be < upper bound.", call. = FALSE)
-    }
-  }
-  invisible(bounds)
-}
+# NOTE: validate_bounds() moved to bounds.R with enhanced error messages
+# and param_names parameter support
 
 #' Null-coalescing helper
 #' @keywords internal

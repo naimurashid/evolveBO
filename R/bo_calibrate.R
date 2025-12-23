@@ -153,6 +153,21 @@ bo_calibrate <- function(sim_fun,
                          ...) {
   acquisition <- match.arg(acquisition)
   fidelity_method <- match.arg(fidelity_method)
+
+  # INPUT VALIDATION: Core parameters
+  if (!is.function(sim_fun)) {
+    stop("`sim_fun` must be a function.", call. = FALSE)
+  }
+  if (!is.character(objective) || length(objective) != 1 || nchar(objective) == 0) {
+    stop("`objective` must be a non-empty character string.", call. = FALSE)
+  }
+  if (!is.list(constraints) || length(constraints) == 0) {
+    stop("`constraints` must be a non-empty named list.", call. = FALSE)
+  }
+  if (!all(vapply(constraints, function(x) length(x) == 2, logical(1)))) {
+    stop("Each constraint must be a length-2 vector: c(direction, threshold).", call. = FALSE)
+  }
+
   validate_bounds(bounds)
   constraint_tbl <- parse_constraints(constraints)
 
@@ -172,6 +187,28 @@ bo_calibrate <- function(sim_fun,
   if (budget < n_init) {
     warning("`budget` is less than `n_init`; only initial design will be evaluated.",
             call. = FALSE)
+  }
+
+  # Validate integer_params if provided
+  if (!is.null(integer_params)) {
+    if (!is.character(integer_params)) {
+      stop("`integer_params` must be a character vector.", call. = FALSE)
+    }
+    unknown_params <- setdiff(integer_params, names(bounds))
+    if (length(unknown_params) > 0) {
+      stop(sprintf("`integer_params` contains unknown parameters: %s",
+                   paste(unknown_params, collapse = ", ")), call. = FALSE)
+    }
+  }
+
+  # BATON v0.3.0: q default changed from 8 to 2 for better exploration/exploitation balance
+
+  # Notify users who may be relying on the old default
+  if (q == 2 && !isTRUE(getOption("BATON.q_warning_shown"))) {
+    message("Note: BATON v0.3.0 changed the default batch size from q=8 to q=2. ",
+            "Set q explicitly if you need the previous behavior. ",
+            "Suppress this message with options(BATON.q_warning_shown = TRUE).")
+    options(BATON.q_warning_shown = TRUE)
   }
 
   # Parse early_stop configuration with defaults
@@ -599,7 +636,10 @@ bo_calibrate <- function(sim_fun,
       )
 
       # Debug output for fidelity selection (if enabled)
-      if (getOption("BATON.debug_fidelity", FALSE) && fidelity_method == "hybrid_staged") {
+      # Support both new and legacy option names for backwards compatibility
+      debug_fidelity <- getOption("BATON.debug_fidelity", FALSE) ||
+                        getOption("evolveBO.debug_fidelity", FALSE)
+      if (debug_fidelity && fidelity_method == "hybrid_staged") {
         message(sprintf("  [Fidelity Debug] iter=%d, prob_feas=%.3f, cv=%.3f, metric=%s, selected=%s",
                         iter_counter, prob_feas, cv_estimate, effective_metric, fidelity))
       }
@@ -801,10 +841,13 @@ record_evaluation <- function(history,
     seed = seed,
     ...
   )
+
   metrics <- result$metrics
   variance <- result$variance
   n_rep <- result$n_rep
+
   feasible <- is_feasible(metrics, constraint_tbl)
+
   objective_value <- metrics[[objective]]
   if (is.null(objective_value)) {
     stop(sprintf("Objective '%s' not returned by simulator.", objective), call. = FALSE)
@@ -914,6 +957,7 @@ record_evaluation <- function(history,
 #' @keywords internal
 invoke_simulator <- function(sim_fun, theta, fidelity, n_rep, seed, ...) {
   res <- sim_fun(theta, fidelity = fidelity, seed = seed, ...)
+
   variance <- attr(res, "variance", exact = TRUE)
   rep_attr <- attr(res, "n_rep", exact = TRUE)
   if (is.list(res) && !is.null(res$metrics)) {
@@ -927,6 +971,7 @@ invoke_simulator <- function(sim_fun, theta, fidelity, n_rep, seed, ...) {
   } else {
     metrics <- res
   }
+
   # Use base R instead of purrr::imap_dbl to avoid "In index: X" errors
   metrics_list <- as.list(metrics)
   metrics <- vapply(metrics_list, function(x) {
@@ -946,6 +991,7 @@ invoke_simulator <- function(sim_fun, theta, fidelity, n_rep, seed, ...) {
   if (is.null(rep_attr) || is.na(rep_attr)) {
     rep_attr <- n_rep
   }
+
   list(
     metrics = metrics,
     variance = variance,
@@ -1518,7 +1564,10 @@ select_fidelity_adaptive <- function(prob_feasible,
   selected <- fidelity_names[best_idx]
 
   # === Diagnostics (optional) ===
-  if (getOption("BATON.debug_fidelity", FALSE)) {
+  # Support both new and legacy option names for backwards compatibility
+  debug_fidelity <- getOption("BATON.debug_fidelity", FALSE) ||
+                    getOption("evolveBO.debug_fidelity", FALSE)
+  if (debug_fidelity) {
     message(sprintf(
       "  Fidelity selection: prob_feas=%.3f, CV=%.3f, acq=%.3f, value=%.3f, cost_exp=%.2f -> %s",
       prob_feasible, cv_estimate, acq_value, value_score, cost_exponent, selected
