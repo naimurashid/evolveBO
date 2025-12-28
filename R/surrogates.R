@@ -151,7 +151,7 @@ fit_hetgp_surrogate <- function(history, metric, id_groups, param_names, covtype
     message(sprintf("  [hetGP] Insufficient observations (%d) for GP - using constant predictor for '%s'",
                     length(X_list), metric))
     return(structure(
-      list(mean = mean_val, metric = metric),
+      list(mean_value = mean_val, metric = metric),
       class = "constant_predictor"
     ))
   }
@@ -194,14 +194,20 @@ fit_hetgp_surrogate <- function(history, metric, id_groups, param_names, covtype
     # Fall back to homoskedastic GP
     # Note: mleHomGP does NOT accept 'mult' argument - it expects pre-aggregated data
     # Aggregate Z by unique X locations before fitting
-    X_unique_idx <- !duplicated(X)
+    # Use row-wise deduplication by converting to data.frame
+    X_df <- as.data.frame(X)
+    X_unique_idx <- !duplicated(X_df)
     X_agg <- X[X_unique_idx, , drop = FALSE]
 
     # Aggregate Z values at each unique location
+    # Z_list[[i]] contains all Z values at location X[i,], so use Z_list directly
+    # (Z_vec = unlist(Z_list) has different length than nrow(X))
     Z_agg <- vapply(seq_len(nrow(X_agg)), function(i) {
-      # Find all rows matching this X location
-      matching <- apply(X, 1, function(row) all(row == X_agg[i, ]))
-      mean(Z_vec[matching], na.rm = TRUE)
+      # Find which rows of X match this unique location
+      matching_rows <- which(apply(X, 1, function(row) all(row == X_agg[i, ])))
+      # Get all Z values from those matching locations
+      all_z <- unlist(Z_list[matching_rows])
+      mean(all_z, na.rm = TRUE)
     }, FUN.VALUE = numeric(1))
 
     # Check for constant/near-constant data which causes GP fitting to fail
@@ -308,7 +314,7 @@ fit_dicekriging_surrogate <- function(history, metric, id_groups, param_names,
     message(sprintf("  [surrogate] Insufficient observations (%d) for GP - using constant predictor for '%s'",
                     nrow(aggr), metric))
     return(structure(
-      list(mean = mean_val, metric = metric),
+      list(mean_value = mean_val, metric = metric),
       class = "constant_predictor"
     ))
   }

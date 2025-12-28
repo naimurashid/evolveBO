@@ -351,6 +351,8 @@ init_stopping_config <- function(
 #'
 #' @param sim_fun Simulation function
 #' @param design Initial design matrix (from LHS or similar)
+#' @param objective Name of the objective metric (character). If NULL, uses
+#'   the first element of the simulator result.
 #' @param fidelity Fidelity level for evaluations
 #' @param init_config Configuration from init_stopping_config()
 #' @param seed Random seed
@@ -370,6 +372,7 @@ init_stopping_config <- function(
 run_init_with_stopping <- function(
     sim_fun,
     design,
+    objective = NULL,
     fidelity = "low",
     init_config = init_stopping_config(),
     seed = NULL,
@@ -396,7 +399,34 @@ run_init_with_stopping <- function(
 
     result <- sim_fun(theta, fidelity = fidelity, seed = seed + i)
     results[[i]] <- result
-    y[i] <- result[[1]]  # Assume first element is objective
+
+    # Extract metrics from result - handle both vector and list-style outputs
+    # Simulators can return:
+    #   1. Named vector: c(EN = 0.1, power = 0.85)
+    #   2. List with metrics element: list(metrics = c(EN = 0.1, ...), variance = ...)
+    #   3. List with named elements: list(EN = 0.1, power = 0.85)
+    if (is.list(result) && !is.null(result$metrics)) {
+      # Case 2: list with metrics element
+      metrics <- result$metrics
+    } else {
+      # Case 1 or 3: named vector or plain list
+      metrics <- result
+    }
+
+    # Extract objective value - use named metric if specified, else first element
+    if (!is.null(objective) && objective %in% names(metrics)) {
+      y[i] <- as.numeric(metrics[[objective]])
+    } else if (!is.null(objective)) {
+      # Objective name specified but not found in result
+      warning(sprintf(
+        "Objective '%s' not found in simulator result at iteration %d. Using first element.",
+        objective, i
+      ))
+      y[i] <- as.numeric(metrics[[1]])
+    } else {
+      # No objective specified - use first element (legacy behavior)
+      y[i] <- as.numeric(metrics[[1]])
+    }
     n_used <- i
 
     if (verbose && i %% 10 == 0) {

@@ -327,6 +327,78 @@ bo_calibrate <- function(sim_fun,
       stop("initial_history has no rows within bounds - cannot warm-start", call. = FALSE)
     }
 
+    # Ensure required columns exist for surrogate fitting
+    # Derive theta list column if it doesn't exist
+    if (!("theta" %in% names(initial_history)) || !is.list(initial_history$theta)) {
+      initial_history$theta <- lapply(seq_len(nrow(initial_history)), function(i) {
+        theta <- as.list(initial_history[i, param_names, drop = TRUE])
+        names(theta) <- param_names
+        theta
+      })
+    }
+
+    # Derive unit_x from theta if it doesn't exist
+    if (!("unit_x" %in% names(initial_history)) || !is.list(initial_history$unit_x)) {
+      initial_history$unit_x <- lapply(initial_history$theta, function(th) {
+        scale_to_unit(th, bounds)
+      })
+    }
+
+    # Derive theta_id from unit_x if it doesn't exist
+    if (!("theta_id" %in% names(initial_history))) {
+      initial_history$theta_id <- vapply(initial_history$unit_x, theta_to_id, character(1))
+    }
+
+    # Ensure metrics list column exists (may be used by some analysis functions)
+    if (!("metrics" %in% names(initial_history)) || !is.list(initial_history$metrics)) {
+      # Build metrics from individual metric columns
+      # Per docs, initial_history has "objective" column + constraint metric columns
+      # We need to map "objective" column to the objective metric name if not already present
+      metric_cols <- unique(c(objective, constraint_tbl$metric))
+      available_cols <- intersect(metric_cols, names(initial_history))
+
+      # Check if objective metric column is missing but "objective" column exists
+      # (user provided objective values in "objective" column, not in metric-named column)
+      has_objective_col <- "objective" %in% names(initial_history)
+      has_metric_col <- objective %in% names(initial_history)
+
+      initial_history$metrics <- lapply(seq_len(nrow(initial_history)), function(i) {
+        m <- list()
+        # Add values from metric-named columns
+        if (length(available_cols) > 0) {
+          m <- as.list(initial_history[i, available_cols, drop = TRUE])
+          names(m) <- available_cols
+        }
+        # If objective metric not in metric columns but "objective" column exists,
+        # use the "objective" column value for the objective metric
+        if (!has_metric_col && has_objective_col) {
+          m[[objective]] <- initial_history$objective[i]
+        }
+        m
+      })
+    }
+
+    # Ensure variance list column exists
+    # Handle three cases: missing, numeric column, or already a list-column
+    if (!("variance" %in% names(initial_history))) {
+      # No variance column - create empty lists
+      initial_history$variance <- replicate(nrow(initial_history), list(), simplify = FALSE)
+    } else if (!is.list(initial_history$variance)) {
+      # Variance is a numeric column (scalar per row) - convert to list-column
+      # Assume the variance applies to the objective metric
+      var_values <- initial_history$variance
+      initial_history$variance <- lapply(seq_len(nrow(initial_history)), function(i) {
+        v <- var_values[i]
+        if (is.na(v) || !is.finite(v)) {
+          list()  # Return empty list for invalid values
+        } else {
+          # Create named list with variance for objective
+          setNames(list(v), objective)
+        }
+      })
+    }
+    # else: already a list-column, keep as-is
+
     # Use filtered history
     history <- initial_history
     n_init_actual <- nrow(initial_history)

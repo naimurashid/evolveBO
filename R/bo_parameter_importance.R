@@ -126,14 +126,16 @@ analyze_parameter_importance <- function(fit, metric = NULL) {
 #'
 #' Computes gradient-based sensitivity at the best design found by BO.
 #' Uses central differences to numerically approximate gradients.
+#' Gradients are computed in unit [0,1] space (where surrogates are trained)
+#' and scaled to original parameter units for interpretability.
 #'
 #' @param fit Result object from bo_calibrate()
-#' @param epsilon Step size for finite differences (default: 0.01 = 1% of range)
+#' @param epsilon Step size for finite differences in unit space (default: 0.01 = 1% of [0,1] range)
 #' @param metric Which metric to analyze (default: objective metric)
 #'
 #' @return Data frame with columns:
 #'   - parameter: Parameter name
-#'   - gradient: Numerical gradient at best design
+#'   - gradient: Numerical gradient at best design (per original unit)
 #'   - abs_sensitivity: Absolute gradient magnitude
 #'   - normalized_sensitivity: Sensitivity normalized to sum to 1
 #'
@@ -147,6 +149,10 @@ compute_local_sensitivity <- function(fit, epsilon = 0.01, metric = NULL) {
     stop("fit object does not contain surrogates. Cannot predict gradients.")
   }
 
+  if (is.null(fit$bounds)) {
+    stop("fit object does not contain bounds. Cannot compute unit-scale perturbations.")
+  }
+
   # Determine which metric to analyze
   if (is.null(metric)) {
     metric <- names(fit$surrogates)[1]
@@ -154,25 +160,47 @@ compute_local_sensitivity <- function(fit, epsilon = 0.01, metric = NULL) {
 
   surrogate <- fit$surrogates[[metric]]
   best_theta <- fit$best_theta
+  bounds <- fit$bounds
 
   # Get parameter names
   param_names <- names(best_theta)
 
-  # Compute numerical gradients
-  gradients <- sapply(param_names, function(param) {
-    # Perturb parameter up and down
-    theta_plus <- theta_minus <- best_theta
-    theta_plus[[param]] <- best_theta[[param]] + epsilon
-    theta_minus[[param]] <- best_theta[[param]] - epsilon
+  # Convert best_theta to unit scale [0,1] for surrogate prediction
+  # Surrogates are trained on unit-scaled inputs
+  best_theta_unit <- vapply(param_names, function(name) {
+    value <- as.numeric(best_theta[[name]])
+    range <- bounds[[name]]
+    (value - range[1]) / (range[2] - range[1])
+  }, FUN.VALUE = numeric(1))
+  names(best_theta_unit) <- param_names
 
-    # Convert to matrix for prediction
-    x_plus <- matrix(unlist(theta_plus), nrow = 1)
-    x_minus <- matrix(unlist(theta_minus), nrow = 1)
+  # Compute numerical gradients in unit space
+  gradients <- sapply(param_names, function(param) {
+    # Perturb parameter up and down in unit space
+    theta_plus <- theta_minus <- best_theta_unit
+    theta_plus[param] <- min(1, best_theta_unit[param] + epsilon)
+    theta_minus[param] <- max(0, best_theta_unit[param] - epsilon)
+
+    # Check if perturbation is too small (at boundary)
+    actual_delta <- theta_plus[param] - theta_minus[param]
+    if (abs(actual_delta) < 1e-8) {
+      return(0)  # At boundary, no gradient information
+    }
+
+    # Convert to named matrices for prediction (surrogates require named columns)
+    x_plus <- matrix(theta_plus, nrow = 1)
+    x_minus <- matrix(theta_minus, nrow = 1)
+    colnames(x_plus) <- colnames(x_minus) <- param_names
 
     # Predict using surrogate
-    if (inherits(surrogate, "km")) {
-      y_plus <- DiceKriging::predict(surrogate, newdata = x_plus, type = "UK")$mean
-      y_minus <- DiceKriging::predict(surrogate, newdata = x_minus, type = "UK")$mean
+    if (inherits(surrogate, "constant_predictor")) {
+      # Constant predictor has no gradient
+      return(0)
+    } else if (inherits(surrogate, "km")) {
+      x_plus_df <- as.data.frame(x_plus)
+      x_minus_df <- as.data.frame(x_minus)
+      y_plus <- DiceKriging::predict(surrogate, newdata = x_plus_df, type = "UK")$mean
+      y_minus <- DiceKriging::predict(surrogate, newdata = x_minus_df, type = "UK")$mean
     } else if (inherits(surrogate, "homGP") || inherits(surrogate, "hetGP")) {
       y_plus <- predict(surrogate, x = x_plus)$mean
       y_minus <- predict(surrogate, x = x_minus)$mean
@@ -180,8 +208,15 @@ compute_local_sensitivity <- function(fit, epsilon = 0.01, metric = NULL) {
       stop(sprintf("Unknown surrogate type: %s", class(surrogate)[1]))
     }
 
-    # Central difference
-    (y_plus - y_minus) / (2 * epsilon)
+    # Central difference in unit space
+    grad_unit <- (y_plus - y_minus) / actual_delta
+
+    # Scale gradient to original units: grad_original = grad_unit * (1 / range_width)
+    # This gives "change in response per unit change in original parameter"
+    range_width <- bounds[[param]][2] - bounds[[param]][1]
+    grad_original <- grad_unit / range_width
+
+    grad_original
   })
 
   # Absolute sensitivity
